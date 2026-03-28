@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone: "professional" # professional, chill, assertive
+
+# Ignore specific branches or PR types
+ignore_draft_pr: true
+ignored_branches:
+  - "experiment/*"
+
+# Reviews
+reviews:
+  # Enable summary of changes
+  summary:
+    enabled: true
+  # Enable high-level walkthrough
+  walkthrough:
+    enabled: true
+  # Enable code-level reviews
+  complexity:
+    enabled: true
+  # Check for potential bugs
+  bugs:
+    enabled: true
+  # Check for security vulnerabilities
+  security:
+    enabled: true
+
+# Path filters to exclude generated files or assets from review
+path_filters:
+  - "!**/dist/**"
+  - "!**/*.lock"
+  - "!**/node_modules/**"
+  - "!**/snapshots/**"
+  - "!**/*.min.js"
+  - "!**/*.min.css"
+  - "!**/vendor/**"
+
+# Customize instructions based on file paths
+file_path_instructions:
+  - path: "**/*.ts"
+    instructions: |
+      Ensure strict type safety is maintained. 
+      Check for proper error handling and async/await usage.
+  - path: "**/*.js"
+    instructions: |
+      If possible, suggest transitioning to TypeScript. 
+      Look for modern ES6+ syntax patterns.
+  - path: "**/*.css"
+    instructions: |
+      Verify adherence to the design system and responsive design principles.
+      Avoid using generic or hardcoded values.
+
+# Enable release notes generation
+release_notes:
+  enabled: true
