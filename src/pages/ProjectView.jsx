@@ -1,0 +1,1009 @@
+import React, { useState, useEffect, useCallback } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { useDropzone } from 'react-dropzone'
+import { 
+  ChevronLeft, Upload, FileImageIcon, Film, Trash2, AlertCircle, 
+  Lock, CreditCard, FolderOpen, Zap, X, Check, Loader2, Grid, List
+} from 'lucide-react'
+
+const getVideoDuration = (file) => {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.onloadedmetadata = function () {
+      window.URL.revokeObjectURL(video.src)
+      resolve(video.duration)
+    }
+    video.src = URL.createObjectURL(file)
+  })
+}
+
+const UploadProgress = ({ file, progress, status }) => (
+  <div className="upload-progress-item">
+    <div className="progress-icon">
+      {status === 'complete' ? <Check size={16} /> : status === 'error' ? <X size={16} /> : <Loader2 size={16} className="spin" />}
+    </div>
+    <div className="progress-info">
+      <span className="progress-name">{file.name}</span>
+      <div className="progress-bar-container">
+        <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+    <span className="progress-percent">{Math.round(progress)}%</span>
+  </div>
+)
+
+const MediaCard = ({ upload, onDelete, onAnalyze }) => {
+  const [hovered, setHovered] = useState(false)
+  
+  return (
+    <div 
+      className="media-card"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="media-preview">
+        {upload.media_type === 'video' ? (
+          <video src={upload.file_url} muted preload="metadata" />
+        ) : (
+          <img src={upload.file_url} alt={upload.file_name} />
+        )}
+        <div className="media-overlay">
+          <Link to={`/dashboard/analysis/${upload.id}`} className="media-action analyze">
+            <Zap size={18} />
+            Analyze
+          </Link>
+          <button onClick={() => onDelete(upload.id, upload.file_url)} className="media-action delete">
+            <Trash2 size={18} />
+          </button>
+        </div>
+        <div className="media-type-badge">
+          {upload.media_type === 'video' ? <Film size={12} /> : <FileImageIcon size={12} />}
+        </div>
+      </div>
+      <div className="media-info">
+        <span className="media-name" title={upload.file_name}>{upload.file_name}</span>
+        <span className="media-size">{(upload.file_size / 1024 / 1024).toFixed(1)} MB</span>
+      </div>
+    </div>
+  )
+}
+
+export default function ProjectView({ session }) {
+  const { projectId } = useParams()
+  const [project, setProject] = useState(null)
+  const [uploads, setUploads] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState([])
+  const [errorMsg, setErrorMsg] = useState('')
+  const [credits, setCredits] = useState(null)
+  const [mounted, setMounted] = useState(false)
+  const [viewMode, setViewMode] = useState('grid')
+  const [isDragActive, setIsDragActive] = useState(false)
+
+  useEffect(() => {
+    fetchProject()
+    fetchUploads()
+    fetchProfile()
+    setMounted(true)
+  }, [projectId])
+
+  const fetchProfile = async () => {
+    const { data } = await supabase.from('profiles').select('available_credits').eq('id', session.user.id).single()
+    if (data) setCredits(data.available_credits)
+  }
+
+  const handleBuyCredits = async () => {
+    const { error } = await supabase.rpc('buy_credits', { amount: 10 })
+    if (!error) {
+      setCredits(prev => (prev || 0) + 10)
+    } else {
+      setErrorMsg("Payment gateway offline.")
+    }
+  }
+
+  const fetchProject = async () => {
+    const { data } = await supabase.from('projects').select('*').eq('id', projectId).single()
+    if (data) setProject(data)
+  }
+
+  const fetchUploads = async () => {
+    const { data } = await supabase.from('uploads').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
+    if (data) setUploads(data)
+    setLoading(false)
+  }
+
+  const handleDelete = async (uploadId, fileUrl) => {
+    const fileName = fileUrl.split('/').pop()
+    await supabase.storage.from('project_files').remove([fileName])
+    await supabase.from('uploads').delete().eq('id', uploadId)
+    setUploads(uploads.filter(u => u.id !== uploadId))
+  }
+
+  const onDrop = useCallback(async (acceptedFiles) => {
+    setErrorMsg('')
+    
+    if (uploads.length + acceptedFiles.length > 10) {
+      setErrorMsg('Limit exceeded: A project can hold a maximum of 10 files.')
+      return
+    }
+
+    setUploading(true)
+    setUploadProgress(acceptedFiles.map(f => ({ file: f, progress: 0, status: 'uploading' })))
+    
+    let completedCount = 0
+    
+    for (const file of acceptedFiles) {
+      const isVideo = file.type.startsWith('video/')
+      const isImage = file.type.startsWith('image/')
+      
+      if (isImage && file.size > 8 * 1024 * 1024) {
+        setUploadProgress(prev => prev.map(p => 
+          p.file === file ? { ...p, status: 'error' } : p
+        ))
+        setErrorMsg(`File rejected: Image ${file.name} exceeds 8MB limit.`)
+        continue
+      }
+      
+      if (isVideo && file.size > 25 * 1024 * 1024) {
+        setUploadProgress(prev => prev.map(p => 
+          p.file === file ? { ...p, status: 'error' } : p
+        ))
+        setErrorMsg(`File rejected: Video ${file.name} exceeds 25MB limit.`)
+        continue
+      }
+
+      if (isVideo) {
+        const duration = await getVideoDuration(file)
+        if (duration > 20) {
+          setUploadProgress(prev => prev.map(p => 
+            p.file === file ? { ...p, status: 'error' } : p
+          ))
+          setErrorMsg(`File rejected: Video ${file.name} duration exceeds 20 seconds.`)
+          continue
+        }
+      }
+
+      const fileExt = file.name.split('.').pop()
+      const safeName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`
+      
+      for (let p = 0; p <= 100; p += 20) {
+        await new Promise(r => setTimeout(r, 50))
+        setUploadProgress(prev => prev.map(pr => 
+          pr.file === file ? { ...pr, progress: p } : pr
+        ))
+      }
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('project_files')
+        .upload(safeName, file)
+
+      if (uploadError) {
+        setUploadProgress(prev => prev.map(p => 
+          p.file === file ? { ...p, status: 'error' } : p
+        ))
+        setErrorMsg(`Error uploading ${file.name}: ${uploadError.message}`)
+        continue
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('project_files').getPublicUrl(safeName)
+
+      const { data: dbData, error: dbError } = await supabase
+        .from('uploads')
+        .insert([{
+          project_id: projectId,
+          user_id: session.user.id,
+          file_name: file.name,
+          file_url: publicUrlData.publicUrl,
+          media_type: isVideo ? 'video' : 'image',
+          file_size: file.size
+        }])
+        .select()
+        
+      if (dbData) {
+        setUploadProgress(prev => prev.map(p => 
+          p.file === file ? { ...p, status: 'complete' } : p
+        ))
+        setUploads(prev => [dbData[0], ...prev])
+        completedCount++
+      }
+    }
+    
+    setTimeout(() => {
+      setUploading(false)
+      setUploadProgress([])
+    }, 1000)
+  }, [projectId, session, uploads.length])
+
+  const { getRootProps, getInputProps, isDragActive: isDropzoneActive } = useDropzone({ 
+    onDrop,
+    accept: {
+      'image/jpeg': ['.jpeg', '.jpg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+      'video/mp4': ['.mp4']
+    },
+    disabled: uploading || uploads.length >= 10
+  })
+
+  return (
+    <div className="project-page">
+      <div className="project-bg">
+        <div className="project-grid" />
+      </div>
+
+      <header className={`project-header ${mounted ? 'mounted' : ''}`}>
+        <Link to="/dashboard" className="back-link">
+          <ChevronLeft size={20} />
+          Back to Dashboard
+        </Link>
+        <div className="header-stats">
+          <div className="stat-pill credits">
+            <Zap size={14} />
+            <span>SCANS:</span>
+            <strong className={credits === 0 ? 'danger' : ''}>{credits !== null ? credits : '...'}</strong>
+          </div>
+          <div className="stat-pill">
+            <span>FILES:</span>
+            <strong>{uploads.length}/10</strong>
+          </div>
+        </div>
+      </header>
+
+      <main className={`project-main ${mounted ? 'mounted' : ''}`}>
+        <div className="project-title-section">
+          <div className="folder-icon">
+            <FolderOpen size={28} />
+          </div>
+          <h1>{project ? project.name : 'Loading...'}</h1>
+        </div>
+
+        {errorMsg && (
+          <div className="error-banner">
+            <AlertCircle size={18} />
+            {errorMsg}
+            <button onClick={() => setErrorMsg('')} className="dismiss-btn">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        <div className="project-content">
+          {/* Upload Zone */}
+          <div className="upload-zone-section">
+            {credits === 0 ? (
+              <div className="credits-locked">
+                <div className="locked-icon">
+                  <Lock size={40} />
+                </div>
+                <h3>Enterprise Limit Reached</h3>
+                <p>Your account holds 0 available scans. Acquire more to continue analysis.</p>
+                <button onClick={handleBuyCredits} className="buy-credits-btn">
+                  <CreditCard size={20} />
+                  Acquire 10 Scans ($15)
+                </button>
+              </div>
+            ) : (
+              <div 
+                {...getRootProps()} 
+                className={`upload-zone ${isDropzoneActive ? 'active' : ''} ${uploading ? 'uploading' : ''}`}
+              >
+                <input {...getInputProps()} />
+                <div className="upload-zone-content">
+                  {uploading ? (
+                    <>
+                      <div className="upload-spinner" />
+                      <span className="upload-text">Uploading...</span>
+                    </>
+                  ) : isDropzoneActive ? (
+                    <>
+                      <div className="upload-icon active">
+                        <Upload size={32} />
+                      </div>
+                      <span className="upload-text highlight">Drop to Inject</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="upload-icon">
+                        <Upload size={32} />
+                      </div>
+                      <span className="upload-text">Drag & Drop or Click</span>
+                      <span className="upload-hint">JPG, PNG, WEBP (8MB) • MP4 (25MB, 20s)</span>
+                    </>
+                  )}
+                </div>
+                {uploading && uploadProgress.length > 0 && (
+                  <div className="upload-progress-list">
+                    {uploadProgress.map((item, i) => (
+                      <UploadProgress key={i} {...item} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Gallery */}
+          <div className="gallery-section">
+            <div className="gallery-header">
+              <h2>
+                <span className="gallery-icon"><Grid size={18} /></span>
+                Visual Stream
+                <span className="count-badge">{uploads.length}</span>
+              </h2>
+              <div className="view-toggle">
+                <button 
+                  className={viewMode === 'grid' ? 'active' : ''} 
+                  onClick={() => setViewMode('grid')}
+                >
+                  <Grid size={16} />
+                </button>
+                <button 
+                  className={viewMode === 'list' ? 'active' : ''} 
+                  onClick={() => setViewMode('list')}
+                >
+                  <List size={16} />
+                </button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="gallery-loading">
+                <Loader2 size={32} className="spin" />
+                <span>Compiling visual intelligence...</span>
+              </div>
+            ) : uploads.length === 0 ? (
+              <div className="gallery-empty">
+                <div className="empty-icon-large">
+                  <FileImageIcon size={48} />
+                </div>
+                <h3>No Targets Acquired</h3>
+                <p>Upload files to begin Neuro-Virality analysis</p>
+              </div>
+            ) : (
+              <div className={`media-gallery ${viewMode}`}>
+                {uploads.map(u => (
+                  <MediaCard 
+                    key={u.id} 
+                    upload={u} 
+                    onDelete={handleDelete}
+                    onAnalyze={() => {}}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      <style>{`
+        .project-page {
+          min-height: 100vh;
+          position: relative;
+          padding-top: 80px;
+        }
+
+        .project-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+        }
+
+        .project-grid {
+          position: absolute;
+          inset: 0;
+          background-image: 
+            linear-gradient(rgba(255, 111, 55, 0.02) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 111, 55, 0.02) 1px, transparent 1px);
+          background-size: 40px 40px;
+        }
+
+        .project-header {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 70px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 2rem;
+          background: rgba(5, 0, 16, 0.95);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          z-index: 100;
+          opacity: 0;
+          transform: translateY(-20px);
+          transition: all 0.5s ease;
+        }
+
+        .project-header.mounted {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .back-link {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          color: var(--color-text-muted);
+          text-decoration: none;
+          font-weight: 500;
+          transition: var(--transition);
+        }
+
+        .back-link:hover {
+          color: var(--color-primary);
+        }
+
+        .header-stats {
+          display: flex;
+          gap: 1rem;
+        }
+
+        .stat-pill {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0.5rem 1rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 100px;
+          font-size: 0.85rem;
+          color: var(--color-text-muted);
+        }
+
+        .stat-pill strong {
+          color: var(--color-text);
+          font-family: var(--font-mono);
+        }
+
+        .stat-pill.credits {
+          border-color: var(--color-primary);
+          background: var(--color-primary-soft);
+        }
+
+        .stat-pill.credits svg {
+          color: var(--color-primary);
+        }
+
+        .stat-pill .danger {
+          color: var(--color-danger);
+        }
+
+        .project-main {
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: 2rem;
+          position: relative;
+          z-index: 5;
+          opacity: 0;
+          transform: translateY(20px);
+          transition: all 0.6s ease 0.2s;
+        }
+
+        .project-main.mounted {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .project-title-section {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          margin-bottom: 2rem;
+        }
+
+        .folder-icon {
+          width: 56px;
+          height: 56px;
+          background: linear-gradient(135deg, var(--color-primary-soft), transparent);
+          border: 1px solid rgba(255, 111, 55, 0.2);
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--color-primary);
+        }
+
+        .project-title-section h1 {
+          font-size: 2rem;
+          font-weight: 800;
+        }
+
+        .error-banner {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 1rem 1.5rem;
+          background: rgba(252, 25, 53, 0.1);
+          border: 1px solid rgba(252, 25, 53, 0.2);
+          border-radius: 12px;
+          color: var(--color-danger);
+          margin-bottom: 2rem;
+          animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .dismiss-btn {
+          margin-left: auto;
+          background: none;
+          border: none;
+          color: var(--color-danger);
+          cursor: pointer;
+          padding: 4px;
+          display: flex;
+          opacity: 0.7;
+          transition: var(--transition);
+        }
+
+        .dismiss-btn:hover {
+          opacity: 1;
+        }
+
+        .project-content {
+          display: grid;
+          grid-template-columns: 350px 1fr;
+          gap: 2rem;
+        }
+
+        /* Upload Zone */
+        .upload-zone-section {
+          height: fit-content;
+        }
+
+        .credits-locked {
+          text-align: center;
+          padding: 3rem 2rem;
+          background: linear-gradient(135deg, rgba(25, 15, 40, 0.8) 0%, rgba(15, 8, 25, 0.9) 100%);
+          border: 1px solid rgba(252, 25, 53, 0.2);
+          border-radius: 20px;
+        }
+
+        .locked-icon {
+          width: 80px;
+          height: 80px;
+          margin: 0 auto 1.5rem;
+          background: rgba(252, 25, 53, 0.1);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--color-danger);
+        }
+
+        .credits-locked h3 {
+          font-size: 1.25rem;
+          margin-bottom: 0.75rem;
+        }
+
+        .credits-locked p {
+          color: var(--color-text-muted);
+          font-size: 0.9rem;
+          margin-bottom: 2rem;
+        }
+
+        .buy-credits-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 1rem 2rem;
+          background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+          border: none;
+          border-radius: 12px;
+          color: white;
+          font-size: 1rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: var(--transition-bounce);
+          box-shadow: 0 8px 25px var(--color-primary-glow);
+        }
+
+        .buy-credits-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 35px var(--color-primary-glow);
+        }
+
+        .upload-zone {
+          padding: 3rem 2rem;
+          background: linear-gradient(135deg, rgba(25, 15, 40, 0.8) 0%, rgba(15, 8, 25, 0.9) 100%);
+          border: 2px dashed rgba(255, 111, 55, 0.3);
+          border-radius: 20px;
+          text-align: center;
+          cursor: pointer;
+          transition: var(--transition);
+        }
+
+        .upload-zone:hover {
+          border-color: var(--color-primary);
+          background: linear-gradient(135deg, rgba(255, 111, 55, 0.05) 0%, rgba(15, 8, 25, 0.9) 100%);
+        }
+
+        .upload-zone.active {
+          border-color: var(--color-primary);
+          background: rgba(255, 111, 55, 0.1);
+          transform: scale(1.02);
+        }
+
+        .upload-zone.uploading {
+          cursor: wait;
+        }
+
+        .upload-zone-content {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .upload-icon {
+          width: 64px;
+          height: 64px;
+          background: var(--color-primary-soft);
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--color-primary);
+          transition: var(--transition);
+        }
+
+        .upload-icon.active {
+          background: var(--color-primary);
+          color: white;
+          animation: pulse 1s ease infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+
+        .upload-text {
+          font-size: 1rem;
+          font-weight: 600;
+          color: var(--color-text);
+        }
+
+        .upload-text.highlight {
+          color: var(--color-primary);
+          font-size: 1.25rem;
+        }
+
+        .upload-hint {
+          font-size: 0.8rem;
+          color: var(--color-text-dim);
+          font-family: var(--font-mono);
+        }
+
+        .upload-spinner {
+          width: 48px;
+          height: 48px;
+          border: 3px solid rgba(255, 111, 55, 0.2);
+          border-top-color: var(--color-primary);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .upload-progress-list {
+          margin-top: 1.5rem;
+          padding-top: 1.5rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .upload-progress-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 0.75rem 0;
+        }
+
+        .progress-icon {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.05);
+          color: var(--color-primary);
+        }
+
+        .progress-info {
+          flex: 1;
+        }
+
+        .progress-name {
+          display: block;
+          font-size: 0.85rem;
+          color: var(--color-text);
+          margin-bottom: 4px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 180px;
+        }
+
+        .progress-bar-container {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 2px;
+          overflow: hidden;
+        }
+
+        .progress-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+          border-radius: 2px;
+          transition: width 0.3s ease;
+        }
+
+        .progress-percent {
+          font-size: 0.8rem;
+          font-family: var(--font-mono);
+          color: var(--color-text-muted);
+        }
+
+        /* Gallery */
+        .gallery-section {
+          background: linear-gradient(135deg, rgba(25, 15, 40, 0.6) 0%, rgba(15, 8, 25, 0.8) 100%);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 20px;
+          padding: 1.5rem;
+        }
+
+        .gallery-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 1.5rem;
+        }
+
+        .gallery-header h2 {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 1.1rem;
+          font-weight: 700;
+        }
+
+        .gallery-icon {
+          color: var(--color-primary);
+        }
+
+        .count-badge {
+          background: var(--color-primary-soft);
+          color: var(--color-primary);
+          padding: 4px 10px;
+          border-radius: 100px;
+          font-size: 0.75rem;
+          font-family: var(--font-mono);
+        }
+
+        .view-toggle {
+          display: flex;
+          gap: 4px;
+          background: rgba(0, 0, 0, 0.3);
+          padding: 4px;
+          border-radius: 8px;
+        }
+
+        .view-toggle button {
+          padding: 8px 12px;
+          background: transparent;
+          border: none;
+          border-radius: 6px;
+          color: var(--color-text-dim);
+          cursor: pointer;
+          transition: var(--transition);
+          display: flex;
+        }
+
+        .view-toggle button:hover {
+          color: var(--color-text);
+        }
+
+        .view-toggle button.active {
+          background: var(--color-primary);
+          color: white;
+        }
+
+        .gallery-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 1rem;
+          padding: 4rem;
+          color: var(--color-text-muted);
+        }
+
+        .gallery-empty {
+          text-align: center;
+          padding: 4rem 2rem;
+        }
+
+        .empty-icon-large {
+          width: 100px;
+          height: 100px;
+          margin: 0 auto 1.5rem;
+          background: rgba(255, 111, 55, 0.1);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--color-text-dim);
+        }
+
+        .gallery-empty h3 {
+          font-size: 1.25rem;
+          margin-bottom: 0.5rem;
+        }
+
+        .gallery-empty p {
+          color: var(--color-text-muted);
+          font-size: 0.9rem;
+        }
+
+        .media-gallery {
+          display: grid;
+          gap: 1rem;
+        }
+
+        .media-gallery.grid {
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        }
+
+        .media-gallery.list {
+          grid-template-columns: 1fr;
+        }
+
+        .media-card {
+          background: rgba(0, 0, 0, 0.4);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 12px;
+          overflow: hidden;
+          transition: var(--transition);
+          animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        .media-card:hover {
+          border-color: var(--color-primary);
+          transform: translateY(-3px);
+          box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .media-preview {
+          position: relative;
+          aspect-ratio: 16/10;
+          background: #000;
+        }
+
+        .media-preview img,
+        .media-preview video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .media-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          opacity: 0;
+          transition: var(--transition);
+        }
+
+        .media-card:hover .media-overlay {
+          opacity: 1;
+        }
+
+        .media-action {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          text-decoration: none;
+          transition: var(--transition);
+          cursor: pointer;
+          background: none;
+          border: none;
+        }
+
+        .media-action.analyze {
+          background: var(--color-primary);
+          color: white;
+        }
+
+        .media-action.analyze:hover {
+          background: var(--color-secondary);
+          transform: scale(1.1);
+        }
+
+        .media-action.delete {
+          background: rgba(252, 25, 53, 0.2);
+          color: var(--color-danger);
+        }
+
+        .media-action.delete:hover {
+          background: var(--color-danger);
+          color: white;
+        }
+
+        .media-type-badge {
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          padding: 4px 8px;
+          background: rgba(0, 0, 0, 0.7);
+          border-radius: 6px;
+          color: var(--color-primary);
+        }
+
+        .media-info {
+          padding: 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .media-name {
+          font-size: 0.8rem;
+          color: var(--color-text);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 120px;
+        }
+
+        .media-size {
+          font-size: 0.75rem;
+          color: var(--color-text-dim);
+          font-family: var(--font-mono);
+        }
+
+        @media (max-width: 1000px) {
+          .project-content {
+            grid-template-columns: 1fr;
+          }
+          .upload-zone-section {
+            order: -1;
+          }
+        }
+
+        @media (max-width: 600px) {
+          .project-main {
+            padding: 1rem;
+          }
+          .media-gallery.grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+      `}</style>
+    </div>
+  )
+}

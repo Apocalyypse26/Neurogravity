@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+gunicorn
+httpx
+pillow
+python-multipart
+slowapi
+pydantic>=2.0

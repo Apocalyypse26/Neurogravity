@@ -1,0 +1,46 @@
+# Render Blueprint - NEUROX Deployment
+# Deploy both backend and frontend services
+
+services:
+  # Backend API Service
+  - type: web
+    name: neurox-api
+    region: oregon
+    repo: https://github.com/YOUR_USERNAME/neurogravity.git
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: USE_REAL_TRIBE
+        value: false
+      - key: CORS_ORIGINS
+        # Update this with your Vercel frontend URL after deployment
+        value: https://neurogravity.vercel.app,https://*.vercel.app
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+# Uncomment below to deploy frontend as static site on Render
+# For production, Vercel is recommended for frontend
+# 
+#  - type: web
+#    name: neurox-frontend
+#    region: oregon
+#    repo: https://github.com/YOUR_USERNAME/neurogravity.git
+#    branch: main
+#    buildCommand: npm install && npm run build
+#    staticPublishPath: dist
+#    headers:
+#      - path: /*
+#        name: Cache-Control
+#        value: public, max-age=0, must-revalidate
+#    envVars:
+#      - key: VITE_API_URL
+#        sync: false
+#      - key: VITE_SUPABASE_URL
+#        sync: false
+#      - key: VITE_SUPABASE_ANON_KEY
+#        sync: false
+#      - key: NODE_VERSION
+#        value: 18
