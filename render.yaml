@@ -10,7 +10,7 @@ services:
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --workers 2 --threads 4 --timeout 120
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
     healthCheckPath: /api/health
     envVars:
       - key: USE_REAL_TRIBE
