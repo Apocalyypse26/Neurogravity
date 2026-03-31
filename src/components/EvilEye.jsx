@@ -1,5 +1,5 @@
 import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './EvilEye.css';
 
 function hexToVec3(hex) {
@@ -167,13 +167,24 @@ export default function EvilEye({
   backgroundColor = '#000000'
 }) {
   const containerRef = useRef(null);
+  const [webglSupported, setWebglSupported] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) {
+      setWebglSupported(false);
+      return;
+    }
+    
     const container = containerRef.current;
-    const renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
-    const gl = renderer.gl;
-    gl.clearColor(0, 0, 0, 0);
+    
+    try {
+      const renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
+      const gl = renderer.gl;
+      gl.clearColor(0, 0, 0, 0);
 
     const noiseData = generateNoiseTexture(256);
     const noiseTexture = new Texture(gl, {
@@ -252,15 +263,31 @@ export default function EvilEye({
     }
     animationFrameId = requestAnimationFrame(update);
 
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', resize);
-      container.removeEventListener('mousemove', onMouseMove);
-      container.removeEventListener('mouseleave', onMouseLeave);
-      container.removeChild(gl.canvas);
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
-    };
+      return () => {
+        cancelAnimationFrame(animationFrameId);
+        window.removeEventListener('resize', resize);
+        container.removeEventListener('mousemove', onMouseMove);
+        container.removeEventListener('mouseleave', onMouseLeave);
+        container.removeChild(gl.canvas);
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+      };
+    } catch (e) {
+      console.error('WebGL initialization failed:', e);
+      setWebglSupported(false);
+    }
   }, [eyeColor, intensity, pupilSize, irisWidth, glowIntensity, scale, noiseScale, pupilFollow, flameSpeed, backgroundColor]);
+
+  if (!webglSupported) {
+    return (
+      <div 
+        className="evil-eye-container" 
+        style={{
+          background: `radial-gradient(circle at 50% 50%, ${eyeColor}44 0%, ${backgroundColor} 70%)`,
+          animation: 'pulse 2s ease-in-out infinite'
+        }} 
+      />
+    );
+  }
 
   return <div ref={containerRef} className="evil-eye-container" />;
 }
