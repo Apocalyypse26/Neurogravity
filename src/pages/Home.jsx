@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import EvilEye from '../components/EvilEye';
 import '../../style.css';
 import { Link } from 'react-router-dom';
-import { Zap, Brain, Target, Shield, ChevronDown, Sparkles, TrendingUp, Radio } from 'lucide-react';
+import { Zap, Brain, Target, Shield, ChevronDown, Sparkles, TrendingUp } from 'lucide-react';
 
 const AnimatedCounter = ({ end, duration = 2000, suffix = '' }) => {
   const [count, setCount] = useState(0);
@@ -35,6 +35,7 @@ const FloatingParticle = ({ delay, x, y }) => (
 export default function Home() {
   const [typingText, setTypingText] = useState('');
   const [showScrollHint, setShowScrollHint] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   const analysisText = `> Neural scan complete.
 > Dopamine index: 847% BASELINE
@@ -113,7 +114,7 @@ export default function Home() {
         <div className="nav-content">
           <div className="logo-enhanced">
             <div className="logo-icon-glow">
-              <Radio size={18} />
+              <img src="/neurox-logo.png" alt="NEUROX" className="logo-img" />
             </div>
             <span className="logo-text">NEUROX</span>
             <span className="logo-version">v2.5</span>
@@ -133,8 +134,32 @@ export default function Home() {
             Launch Terminal
             <span className="btn-arrow">→</span>
           </Link>
+          <button 
+            className="mobile-menu-btn" 
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <span></span>
+          </button>
         </div>
       </header>
+
+      {/* Mobile Menu */}
+      <div className={`mobile-menu ${mobileMenuOpen ? 'active' : ''}`}>
+        <button 
+          className="mobile-menu-close" 
+          onClick={() => setMobileMenuOpen(false)}
+          aria-label="Close menu"
+        >
+          ×
+        </button>
+        <a href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
+        <a href="#stats" onClick={() => setMobileMenuOpen(false)}>Stats</a>
+        <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+        <Link to="/auth" className="btn-nav" onClick={() => setMobileMenuOpen(false)}>
+          Launch Terminal
+        </Link>
+      </div>
 
       <main>
         {/* Hero Section */}
@@ -361,7 +386,7 @@ export default function Home() {
         <div className="footer-content-animated">
           <div className="footer-brand">
             <div className="logo-icon-glow small">
-              <Radio size={14} />
+              <img src="/neurox-logo.png" alt="NEUROX" className="logo-img" />
             </div>
             <span>NEUROX</span>
           </div>

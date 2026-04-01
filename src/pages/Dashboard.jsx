@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
-import { Folder, Plus, LogOut, Code, Shield, Terminal, Zap, ChevronRight, FolderOpen, Clock, MoreVertical } from 'lucide-react'
+import { Folder, Plus, LogOut, Code, Shield, Zap, ChevronRight, FolderOpen, Clock, MoreVertical } from 'lucide-react'
 
 const ProjectCard = ({ project, index }) => {
   const [hovered, setHovered] = useState(false)
@@ -107,7 +107,7 @@ export default function Dashboard({ session }) {
         <div className="header-left">
           <Link to="/" className="header-logo">
             <div className="logo-icon-small">
-              <Terminal size={16} />
+              <img src="/neurox-logo.png" alt="NEUROX" className="logo-img" />
             </div>
             <span>NEUROX</span>
           </Link>
@@ -322,13 +322,19 @@ export default function Dashboard({ session }) {
         .logo-icon-small {
           width: 32px;
           height: 32px;
-          background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
           border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
-          color: white;
+          overflow: hidden;
           box-shadow: 0 0 15px var(--color-primary-glow);
+        }
+
+        .logo-icon-small .logo-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: inherit;
         }
 
         .header-divider {
@@ -821,20 +827,55 @@ export default function Dashboard({ session }) {
         }
 
         @media (max-width: 600px) {
+          .dashboard-page {
+            min-height: 100dvh;
+          }
           .dashboard-header {
             padding: 0 1rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
           }
           .header-location {
             display: none;
           }
+          .header-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
           .dashboard-main {
-            padding: 2rem 1rem;
+            padding: 1.5rem 1rem;
+          }
+          .dashboard-grid-layout {
+            gap: 1.5rem;
           }
           .projects-grid {
             grid-template-columns: 1fr;
+            gap: 1rem;
+          }
+          .project-card {
+            padding: 1.25rem;
           }
           .quick-stats {
             flex-direction: column;
+          }
+          .stat-card-mini {
+            padding: 1rem;
+          }
+          .stat-icon {
+            width: 40px;
+            height: 40px;
+          }
+          .stat-value {
+            font-size: 1.25rem;
+          }
+          .create-card {
+            padding: 1.5rem;
+          }
+          .create-input {
+            font-size: 16px; /* Prevents zoom on iOS */
+          }
+          .create-button {
+            padding: 0.875rem 1.5rem;
           }
         }
       `}</style>

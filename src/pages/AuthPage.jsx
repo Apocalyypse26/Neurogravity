@@ -47,9 +47,10 @@ export default function AuthPage({ session }) {
     setMessage('')
     setError(false)
     
+    const redirectUrl = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.origin;
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin + '/dashboard' }
+      options: { emailRedirectTo: redirectUrl + '/dashboard' }
     })
 
     if (error) {
@@ -502,14 +503,48 @@ export default function AuthPage({ session }) {
         }
 
         @media (max-width: 500px) {
+          .auth-page {
+            padding: 1rem;
+          }
           .auth-card {
-            padding: 2rem;
-            margin: 1rem;
+            padding: 1.5rem;
+            margin: 0;
+            border-radius: 16px;
           }
           .auth-back {
             top: 1rem;
             left: 1rem;
+            padding: 0.5rem 1rem;
+            font-size: 0.8rem;
           }
+          .auth-icon {
+            width: 56px;
+            height: 56px;
+          }
+          .auth-title {
+            font-size: 1.5rem;
+          }
+          .auth-subtitle {
+            font-size: 0.85rem;
+          }
+          .auth-input {
+            padding: 1rem 1rem 1rem 3rem;
+            font-size: 16px; /* Prevents zoom on iOS */
+          }
+          .auth-button {
+            padding: 1rem;
+            font-size: 0.9rem;
+          }
+          .auth-message {
+            padding: 0.75rem;
+            font-size: 0.85rem;
+          }
+          .auth-glow {
+            width: 300px;
+            height: 300px;
+          }
+          .auth-glow-1 { top: -100px; right: -100px; }
+          .auth-glow-2 { bottom: -100px; left: -100px; }
         }
       `}</style>
     </div>

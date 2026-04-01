@@ -24,49 +24,33 @@ class ErrorBoundary extends React.Component {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%)',
+          background: '#0a0a0a',
           color: '#fff',
           fontFamily: 'monospace',
           padding: '2rem',
           textAlign: 'center'
         }}>
-          <h1 style={{ 
-            fontSize: '2rem', 
-            color: '#ef4444', 
-            marginBottom: '1rem',
-            textShadow: '0 0 10px #ef4444'
-          }}>
-            [CRITICAL ERROR]
+          <h1 style={{ fontSize: '2rem', color: '#ef4444', marginBottom: '1rem' }}>
+            CRITICAL ERROR
           </h1>
-          <p style={{ 
-            color: '#f59e0b', 
-            marginBottom: '1.5rem',
-            maxWidth: '600px'
-          }}>
+          <p style={{ color: '#f59e0b', marginBottom: '1.5rem' }}>
             {this.state.error?.message || 'An unexpected error occurred'}
           </p>
+          <pre style={{ color: '#888', fontSize: '0.8rem', maxWidth: '600px', overflow: 'auto' }}>
+            {this.state.errorInfo?.componentStack || 'No stack trace'}
+          </pre>
           <button
             onClick={() => window.location.reload()}
             style={{
               padding: '0.75rem 1.5rem',
-              background: 'transparent',
-              border: '2px solid #10b981',
-              color: '#10b981',
-              fontFamily: 'monospace',
-              fontSize: '1rem',
+              background: '#10b981',
+              border: 'none',
+              color: '#000',
               cursor: 'pointer',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseOver={(e) => {
-              e.target.style.background = '#10b981';
-              e.target.style.color = '#000';
-            }}
-            onMouseOut={(e) => {
-              e.target.style.background = 'transparent';
-              e.target.style.color = '#10b981';
+              marginTop: '1rem'
             }}
           >
-            [RELOAD TERMINAL]
+            RELOAD
           </button>
         </div>
       );

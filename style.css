@@ -155,12 +155,11 @@ body {
 .logo-icon-glow {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  overflow: hidden;
   box-shadow: 0 0 20px var(--color-primary-glow), 0 4px 15px rgba(0, 0, 0, 0.3);
   animation: logoPulse 3s ease-in-out infinite;
 }
@@ -169,7 +168,13 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  font-size: 12px;
+}
+
+.logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 @keyframes logoPulse {
@@ -1368,4 +1373,176 @@ footer { text-align: center; padding: 40px 0; border-top: 1px solid rgba(255, 11
   .dashboard-container { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
   .hero { padding: 30px 15px; }
   nav { display: none; }
+}
+
+/* Comprehensive Mobile Styles */
+@media (max-width: 768px) {
+  html { font-size: 14px; }
+  body { -webkit-tap-highlight-color: transparent; }
+  
+  /* Navbar Mobile */
+  .navbar-enhanced { padding: 0.75rem 1rem; }
+  .nav-content { padding: 0.5rem; flex-wrap: wrap; }
+  .logo-text { font-size: 1.1rem; }
+  .logo-version { display: none; }
+  .nav-links { display: none; }
+  .btn-nav { padding: 0.6rem 1rem; font-size: 0.75rem; }
+  
+  /* Mobile Menu Button */
+  .mobile-menu-btn {
+    display: flex !important;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .mobile-menu-btn span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--color-text);
+    position: relative;
+    transition: var(--transition);
+  }
+  .mobile-menu-btn span::before,
+  .mobile-menu-btn span::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 2px;
+    background: var(--color-text);
+    transition: var(--transition);
+  }
+  .mobile-menu-btn span::before { top: -6px; }
+  .mobile-menu-btn span::after { top: 6px; }
+  
+  /* Mobile Menu Overlay */
+  .mobile-menu {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 0, 16, 0.98);
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--transition);
+  }
+  .mobile-menu.active { opacity: 1; visibility: visible; }
+  .mobile-menu a {
+    font-size: 1.5rem;
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 1rem;
+    transition: var(--transition);
+  }
+  .mobile-menu a:hover { color: var(--color-primary); }
+  .mobile-menu-close {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    background: none;
+    border: none;
+    color: var(--color-text);
+    font-size: 2rem;
+    cursor: pointer;
+  }
+  
+  /* Hero Section Mobile */
+  .hero-section {
+    min-height: auto;
+    padding: 6rem 1rem 3rem;
+    gap: 2rem;
+  }
+  .hero-title { font-size: 2rem; }
+  .title-gradient { font-size: 2rem; }
+  .hero-subtitle { font-size: 1rem; padding: 0 0.5rem; }
+  .hero-cta { flex-direction: column; gap: 0.75rem; }
+  .btn-primary-large, .btn-secondary-large {
+    width: 100%;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .hero-trust { flex-wrap: wrap; justify-content: center; }
+  
+  /* Preview Window Mobile */
+  .hero-preview { padding: 0 1rem; }
+  .preview-window {
+    transform: none;
+    animation: none;
+    max-width: 100%;
+  }
+  .preview-window:hover { transform: none; }
+  .preview-body { grid-template-columns: 1fr; padding: 1rem; gap: 1rem; }
+  .preview-left, .preview-right { width: 100%; }
+  .score-number { font-size: 3rem; }
+  
+  /* Stats Section Mobile */
+  .stats-section { padding: 3rem 1rem; }
+  .stats-container { grid-template-columns: 1fr; gap: 1rem; }
+  .stat-card { padding: 1.5rem; }
+  .stat-value { font-size: 2.5rem; }
+  
+  /* Features Section Mobile */
+  .features-section { padding: 3rem 1rem; }
+  .features-grid { grid-template-columns: 1fr; gap: 1rem; }
+  .feature-card-enhanced { padding: 1.5rem; }
+  .section-title { font-size: 1.5rem; }
+  
+  /* Pricing Section Mobile */
+  .pricing-section { padding: 3rem 1rem; }
+  .pricing-cards { flex-direction: column; gap: 1.5rem; }
+  .pricing-card-animated { max-width: 100%; }
+  .tier-pro { transform: none; }
+  .tier-pro:hover { transform: translateY(-5px); }
+  .tier-price { font-size: 2.5rem; }
+  
+  /* CTA Section Mobile */
+  .cta-section { padding: 4rem 1rem; }
+  .cta-content h2 { font-size: 1.75rem; }
+  .cta-content p { font-size: 1rem; }
+  
+  /* Footer Mobile */
+  .footer-enhanced { padding: 2rem 1rem; }
+  .footer-content-animated { flex-direction: column; text-align: center; }
+  .footer-links { flex-wrap: wrap; justify-content: center; gap: 1rem; }
+  
+  /* Scroll Indicator */
+  .scroll-hint { bottom: 1rem; font-size: 0.7rem; }
+  
+  /* Auth Page Mobile */
+  .auth-card { padding: 2rem 1.5rem; margin: 1rem; }
+  .auth-title { font-size: 1.5rem; }
+  .auth-decoration { display: none; }
+  .auth-back { top: 1rem; left: 1rem; padding: 0.5rem 1rem; font-size: 0.8rem; }
+}
+
+@media (max-width: 480px) {
+  .hero-title { font-size: 1.75rem; }
+  .title-gradient { font-size: 1.75rem; }
+  .hero-badge { font-size: 0.7rem; padding: 0.4rem 0.8rem; }
+  .btn-primary-large, .btn-secondary-large { padding: 0.875rem; font-size: 0.9rem; }
+  .preview-header { padding: 0.75rem 1rem; }
+  .preview-title { font-size: 0.65rem; }
+  .score-number { font-size: 2.5rem; }
+  .score-total { font-size: 1rem; }
+  .stream-text { font-size: 0.65rem; }
+  .metric { grid-template-columns: 40px 1fr 25px; font-size: 0.65rem; }
+  .section-title { font-size: 1.25rem; }
+  .feature-title { font-size: 1rem; }
+  .feature-desc { font-size: 0.85rem; }
+}
+
+/* Desktop only - hide mobile menu button */
+@media (min-width: 769px) {
+  .mobile-menu-btn { display: none !important; }
+  .mobile-menu { display: none !important; }
 }
