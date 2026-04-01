@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import ProjectView from './pages/ProjectView'
 import ResultsView from './pages/ResultsView'
 import AdminDashboard from './pages/AdminDashboard'
+import Documentation from './pages/Documentation'
 import '../style.css'
 
 // Lazy load supabase to prevent crashes if env vars are missing
@@ -58,6 +59,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home session={session} />} />
       <Route path="/auth" element={<AuthPage session={session} />} />
+      <Route path="/docs" element={<Documentation />} />
       <Route path="/dashboard" element={
         <RequireAuth>
           <Dashboard session={session} />

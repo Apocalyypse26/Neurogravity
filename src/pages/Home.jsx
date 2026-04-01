@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import EvilEye from '../components/EvilEye';
 import '../../style.css';
 import { Link } from 'react-router-dom';
-import { Zap, Brain, Target, Shield, ChevronDown, Sparkles, TrendingUp } from 'lucide-react';
+import { Zap, Brain, Target, Shield, ChevronDown, Sparkles, TrendingUp, BookOpen } from 'lucide-react';
 
 const AnimatedCounter = ({ end, duration = 2000, suffix = '' }) => {
   const [count, setCount] = useState(0);
@@ -144,6 +144,9 @@ export default function Home() {
             <a href="#pricing" className="nav-link">
               <Shield size={14} /> Pricing
             </a>
+            <Link to="/docs" className="nav-link">
+              <BookOpen size={14} /> Docs
+            </Link>
           </nav>
           <Link to="/auth" className="btn-nav">
             Launch Terminal
@@ -171,6 +174,7 @@ export default function Home() {
         <a href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
         <a href="#stats" onClick={() => setMobileMenuOpen(false)}>Stats</a>
         <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
+        <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Documentation</Link>
         <Link to="/auth" className="btn-nav" onClick={() => setMobileMenuOpen(false)}>
           Launch Terminal
         </Link>
@@ -441,7 +445,7 @@ export default function Home() {
           </div>
           <p className="footer-copy">© 2026 NEUROX Protocol. All systems operational.</p>
           <div className="footer-links">
-            <a href="#">Documentation</a>
+            <Link to="/docs">Documentation</Link>
             <a href="#">X / Twitter</a>
             <a href="#">Telegram</a>
           </div>
