@@ -123,9 +123,16 @@ export default function ResultsView({ session }) {
     try {
       const { data: hasCredits, error: rpcError } = await supabase.rpc('consume_credit')
       
-      if (rpcError || !hasCredits) {
+      if (rpcError) {
+        console.error("[CREDITS] RPC error:", rpcError)
         setLoading(false)
-        setServerError("INSUFFICIENT ENTERPRISE CREDITS. Access your Project Directory Paywall to acquire more compute capacity.")
+        setServerError(`Credit check failed: ${rpcError.message}. Please refresh and try again.`)
+        return
+      }
+
+      if (!hasCredits) {
+        setLoading(false)
+        setServerError("INSUFFICIENT SCAN CREDITS. You have no credits remaining. Go to the Dashboard to purchase more.")
         return
       }
 
