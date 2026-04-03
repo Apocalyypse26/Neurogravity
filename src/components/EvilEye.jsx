@@ -1,5 +1,5 @@
 import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import './EvilEye.css';
 
 function hexToVec3(hex) {
@@ -11,7 +11,7 @@ function hexToVec3(hex) {
   ];
 }
 
-function generateNoiseTexture(size = 256) {
+function generateNoiseTexture(size = 128) {
   const data = new Uint8Array(size * size * 4);
 
   function hash(x, y, s) {
@@ -104,7 +104,6 @@ void main() {
 
   float distanceMask = 1.0 - length(uv);
 
-  // Inner ring
   float innerRing = clamp(-1.0 * ((distanceMask - 0.7) / uIrisWidth), 0.0, 1.0);
   innerRing = (innerRing * distanceMask - 0.2) / 0.28;
   innerRing += noiseA.r - 0.5;
@@ -119,11 +118,9 @@ void main() {
 
   innerRing += outerRing;
 
-  // Inner eye
   float innerEye = distanceMask - 0.1 * 2.0;
   innerEye *= noiseB.r * 2.0;
 
-  // Pupil with cursor tracking
   vec2 pupilOffset = uMouse * uPupilFollow * 0.12;
   vec2 pupilUv = uv - pupilOffset;
   float pupil = 1.0 - length(pupilUv * vec2(9.0, 2.3));
@@ -131,7 +128,6 @@ void main() {
   pupil = clamp(pupil, 0.0, 1.0);
   pupil /= 0.35;
 
-  // Outer eye
   float outerEyeGlow = 1.0 - length(uv * vec2(0.5, 1.5));
   outerEyeGlow = clamp(outerEyeGlow + 0.5, 0.0, 1.0);
   outerEyeGlow += noiseC.r - 0.5;
@@ -142,7 +138,6 @@ void main() {
   outerEyeGlow = clamp(outerEyeGlow, 0.0, 1.0);
   outerEyeGlow *= pow(1.0 - distanceMask, 2.0) * 2.5;
 
-  // Outer eye bg glow
   outerBgGlow += distanceMask;
   outerBgGlow = pow(outerBgGlow, 0.5);
   outerBgGlow *= 0.15;
@@ -153,6 +148,26 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }
 `;
+
+// Performance configuration
+const PERFORMANCE_CONFIG = {
+  HIGH: { fps: 60, textureSize: 128 },
+  MEDIUM: { fps: 30, textureSize: 64 },
+  LOW: { fps: 15, textureSize: 64 }
+};
+
+function detectPerformanceLevel() {
+  const dpr = window.devicePixelRatio || 1;
+  const cores = navigator.hardwareConcurrency || 4;
+  const memory = navigator.deviceMemory || 4;
+  
+  if (dpr <= 1 && cores >= 4 && memory >= 4) {
+    return 'HIGH';
+  } else if (dpr <= 2 && cores >= 2 && memory >= 2) {
+    return 'MEDIUM';
+  }
+  return 'LOW';
+}
 
 export default function EvilEye({
   eyeColor = '#FF6F37',
@@ -169,113 +184,170 @@ export default function EvilEye({
   const containerRef = useRef(null);
   const [webglSupported, setWebglSupported] = useState(true);
 
+  const performanceLevel = useRef(detectPerformanceLevel());
+  const textureSize = PERFORMANCE_CONFIG[performanceLevel.current].textureSize;
+  const targetFPS = PERFORMANCE_CONFIG[performanceLevel.current].fps;
+  
+  // Performance state refs
+  const isVisible = useRef(true);
+  const lastFrameTime = useRef(0);
+  const animationFrameId = useRef(null);
+
   useEffect(() => {
     if (!containerRef.current) return;
     
     const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    if (!gl) {
+    const glContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!glContext) {
       setWebglSupported(false);
       return;
     }
     
     const container = containerRef.current;
+    const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+    
+    // Page Visibility API - pause when tab is hidden
+    const handleVisibilityChange = () => {
+      isVisible.current = !document.hidden;
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    isVisible.current = !document.hidden;
     
     try {
-      const renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
+      const renderer = new Renderer({ 
+        alpha: true, 
+        premultipliedAlpha: false,
+        powerPreference: performanceLevel.current === 'LOW' ? 'low-power' : 'high-performance'
+      });
       const gl = renderer.gl;
       gl.clearColor(0, 0, 0, 0);
 
-    const noiseData = generateNoiseTexture(256);
-    const noiseTexture = new Texture(gl, {
-      image: noiseData,
-      width: 256,
-      height: 256,
-      generateMipmaps: false,
-      flipY: false,
-    });
-    noiseTexture.minFilter = gl.LINEAR;
-    noiseTexture.magFilter = gl.LINEAR;
-    noiseTexture.wrapS = gl.REPEAT;
-    noiseTexture.wrapT = gl.REPEAT;
+      // Generate optimized noise texture (reduced from 256 to 128)
+      const noiseData = generateNoiseTexture(textureSize);
+      const noiseTexture = new Texture(gl, {
+        image: noiseData,
+        width: textureSize,
+        height: textureSize,
+        generateMipmaps: false,
+        flipY: false,
+      });
+      noiseTexture.minFilter = gl.LINEAR;
+      noiseTexture.magFilter = gl.LINEAR;
+      noiseTexture.wrapS = gl.REPEAT;
+      noiseTexture.wrapT = gl.REPEAT;
 
-    const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
-
-    function onMouseMove(e) {
-      const rect = container.getBoundingClientRect();
-      mouse.tx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.ty = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-    }
-
-    function onMouseLeave() {
-      mouse.tx = 0;
-      mouse.ty = 0;
-    }
-
-    container.addEventListener('mousemove', onMouseMove);
-    container.addEventListener('mouseleave', onMouseLeave);
-
-    let program;
-
-    function resize() {
-      renderer.setSize(container.offsetWidth, container.offsetHeight);
-      if (program) {
-        program.uniforms.uResolution.value = [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height];
+      function onMouseMove(e) {
+        const rect = container.getBoundingClientRect();
+        mouse.tx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.ty = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
       }
-    }
-    window.addEventListener('resize', resize);
-    resize();
 
-    const geometry = new Triangle(gl);
-    program = new Program(gl, {
-      vertex: vertexShader,
-      fragment: fragmentShader,
-      uniforms: {
-        uTime: { value: 0 },
-        uResolution: { value: [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height] },
-        uNoiseTexture: { value: noiseTexture },
-        uPupilSize: { value: pupilSize },
-        uIrisWidth: { value: irisWidth },
-        uGlowIntensity: { value: glowIntensity },
-        uIntensity: { value: intensity },
-        uScale: { value: scale },
-        uNoiseScale: { value: noiseScale },
-        uMouse: { value: [0, 0] },
-        uPupilFollow: { value: pupilFollow },
-        uFlameSpeed: { value: flameSpeed },
-        uEyeColor: { value: hexToVec3(eyeColor) },
-        uBgColor: { value: hexToVec3(backgroundColor) }
+      function onMouseLeave() {
+        mouse.tx = 0;
+        mouse.ty = 0;
       }
-    });
 
-    const mesh = new Mesh(gl, { geometry, program });
-    container.appendChild(gl.canvas);
+      container.addEventListener('mousemove', onMouseMove);
+      container.addEventListener('mouseleave', onMouseLeave);
 
-    let animationFrameId;
+      let program;
 
-    function update(time) {
-      animationFrameId = requestAnimationFrame(update);
-      mouse.x += (mouse.tx - mouse.x) * 0.05;
-      mouse.y += (mouse.ty - mouse.y) * 0.05;
-      program.uniforms.uMouse.value = [mouse.x, mouse.y];
-      program.uniforms.uTime.value = time * 0.001;
-      renderer.render({ scene: mesh });
-    }
-    animationFrameId = requestAnimationFrame(update);
+      function resize() {
+        // Handle device pixel ratio for sharper rendering on high-DPI displays
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        renderer.setSize(
+          container.offsetWidth * dpr, 
+          container.offsetHeight * dpr
+        );
+        renderer.gl.canvas.style.width = `${container.offsetWidth}px`;
+        renderer.gl.canvas.style.height = `${container.offsetHeight}px`;
+        
+        if (program) {
+          program.uniforms.uResolution.value = [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height];
+        }
+      }
+      
+      let resizeTimeout;
+      const debouncedResize = () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(resize, 100);
+      };
+      window.addEventListener('resize', debouncedResize);
+      resize();
+
+      const geometry = new Triangle(gl);
+      program = new Program(gl, {
+        vertex: vertexShader,
+        fragment: fragmentShader,
+        uniforms: {
+          uTime: { value: 0 },
+          uResolution: { value: [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height] },
+          uNoiseTexture: { value: noiseTexture },
+          uPupilSize: { value: pupilSize },
+          uIrisWidth: { value: irisWidth },
+          uGlowIntensity: { value: glowIntensity },
+          uIntensity: { value: intensity },
+          uScale: { value: scale },
+          uNoiseScale: { value: noiseScale },
+          uMouse: { value: [0, 0] },
+          uPupilFollow: { value: pupilFollow },
+          uFlameSpeed: { value: flameSpeed },
+          uEyeColor: { value: hexToVec3(eyeColor) },
+          uBgColor: { value: hexToVec3(backgroundColor) }
+        }
+      });
+
+      const mesh = new Mesh(gl, { geometry, program });
+      container.appendChild(gl.canvas);
+
+      function update(time) {
+        animationFrameId.current = requestAnimationFrame(update);
+        
+        // Skip rendering if tab is not visible (major performance boost)
+        if (!isVisible.current) return;
+        
+        // Frame rate throttling for better performance
+        const frameInterval = 1000 / targetFPS;
+        const deltaTime = time - lastFrameTime.current;
+        
+        if (deltaTime < frameInterval) return;
+        
+        lastFrameTime.current = time - (deltaTime % frameInterval);
+        
+        // Smooth mouse interpolation
+        mouse.x += (mouse.tx - mouse.x) * 0.05;
+        mouse.y += (mouse.ty - mouse.y) * 0.05;
+        
+        program.uniforms.uMouse.value = [mouse.x, mouse.y];
+        program.uniforms.uTime.value = time * 0.001;
+        renderer.render({ scene: mesh });
+      }
+      
+      animationFrameId.current = requestAnimationFrame(update);
 
       return () => {
-        cancelAnimationFrame(animationFrameId);
-        window.removeEventListener('resize', resize);
+        if (animationFrameId.current) {
+          cancelAnimationFrame(animationFrameId.current);
+        }
+        clearTimeout(resizeTimeout);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('resize', debouncedResize);
         container.removeEventListener('mousemove', onMouseMove);
         container.removeEventListener('mouseleave', onMouseLeave);
-        container.removeChild(gl.canvas);
+        if (gl.canvas && gl.canvas.parentNode) {
+          container.removeChild(gl.canvas);
+        }
         gl.getExtension('WEBGL_lose_context')?.loseContext();
       };
     } catch (e) {
       console.error('WebGL initialization failed:', e);
       setWebglSupported(false);
     }
-  }, [eyeColor, intensity, pupilSize, irisWidth, glowIntensity, scale, noiseScale, pupilFollow, flameSpeed, backgroundColor]);
+  }, [
+    eyeColor, intensity, pupilSize, irisWidth, glowIntensity, 
+    scale, noiseScale, pupilFollow, flameSpeed, backgroundColor,
+    textureSize, targetFPS
+  ]);
 
   if (!webglSupported) {
     return (
