@@ -5,6 +5,7 @@ from .score_mapper import score_mapper, ScoreMapper, NeuroMetrics
 from .job_manager import job_manager, JobManager, AnalysisJob, JobStatus
 from .auth_service import auth_service, AuthService
 from .admin_service import admin_service, AdminService
+from .video_validation import validate_video_url, validate_video_file, VideoValidationResult
 
 __all__ = [
     "tribe_service",
@@ -27,5 +28,8 @@ __all__ = [
     "auth_service",
     "AuthService",
     "admin_service",
-    "AdminService"
+    "AdminService",
+    "validate_video_url",
+    "validate_video_file",
+    "VideoValidationResult"
 ]

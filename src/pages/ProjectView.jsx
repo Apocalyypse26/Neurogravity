@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { validateVideo } from '../lib/api'
 import { useDropzone } from 'react-dropzone'
 import StripeCheckout from '../components/StripeCheckout'
 import ConfirmModal from '../components/ConfirmModal'
@@ -264,6 +265,31 @@ export default function ProjectView({ session }) {
       }
 
       const { data: publicUrlData } = supabase.storage.from('project_files').getPublicUrl(safeName)
+
+      if (isVideo) {
+        try {
+          setUploadProgress(prev => prev.map(p => 
+            p.file === file ? { ...p, progress: 50 } : p
+          ))
+          
+          const validation = await validateVideo(publicUrlData.publicUrl, 20)
+          
+          setUploadProgress(prev => prev.map(p => 
+            p.file === file ? { ...p, progress: 75 } : p
+          ))
+        } catch (validationError) {
+          console.error('Video validation failed:', validationError)
+          
+          await supabase.storage.from('project_files').remove([safeName])
+          
+          setUploadProgress(prev => prev.map(p => 
+            p.file === file ? { ...p, status: 'error' } : p
+          ))
+          setErrorMsg(`Video validation failed: ${validationError.message}`)
+          failedCount++
+          continue
+        }
+      }
 
       const { data: dbData, error: dbError } = await supabase
         .from('uploads')

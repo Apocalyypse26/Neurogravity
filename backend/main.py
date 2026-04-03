@@ -44,6 +44,7 @@ from services import (
 )
 from services.tribe_service import is_url_safe
 from services.stripe_service import stripe_service, CREDIT_PACKAGES, SUBSCRIPTION_PLANS
+from services.video_validation import validate_video_url, VideoValidationResult
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -243,6 +244,30 @@ class FileValidationRequest(BaseModel):
             raise ValueError(f'media_type must be one of: {", ".join(allowed)}')
         return v.lower()
 
+
+class VideoValidationRequest(BaseModel):
+    file_url: str
+    max_duration: int = 20
+
+    @field_validator('file_url')
+    @classmethod
+    def validate_file_url(cls, v):
+        if not v:
+            raise ValueError('file_url is required')
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('file_url must be a valid HTTP(S) URL')
+        if not is_url_safe(v):
+            raise ValueError('file_url must be from an allowed domain (Supabase storage)')
+        return v
+
+    @field_validator('max_duration')
+    @classmethod
+    def validate_max_duration(cls, v):
+        if v <= 0 or v > 300:
+            raise ValueError('max_duration must be between 1 and 300 seconds')
+        return v
+
+
 def seeded_random(seed, offset):
     x = math.sin(seed + offset) * 10000
     return x - math.floor(x)
@@ -287,6 +312,42 @@ async def validate_project_files(request: Request, data: dict):
             detail=f"Project already has maximum of {MAX_FILES_PER_PROJECT} files"
         )
     return {"valid": True, "remaining_slots": MAX_FILES_PER_PROJECT - current_count}
+
+
+@app.post("/api/validate-video")
+@user_limiter.limit("30/minute")
+async def validate_video(request: Request, video_req: VideoValidationRequest):
+    """
+    Validate video URL using ffprobe.
+    Checks duration, codec, and basic integrity.
+    This is a server-side validation to prevent users from bypassing limits.
+    """
+    print(f"[VIDEO_VALIDATION] Validating video: {video_req.file_url}")
+    
+    result = validate_video_url(video_req.file_url, video_req.max_duration)
+    
+    if not result.valid:
+        print(f"[VIDEO_VALIDATION] Validation failed: {result.errors}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "valid": False,
+                "errors": result.errors,
+                "message": "Video validation failed"
+            }
+        )
+    
+    print(f"[VIDEO_VALIDATION] Validation passed: duration={result.duration}s, codec={result.codec}")
+    
+    return {
+        "valid": True,
+        "duration": result.duration,
+        "width": result.width,
+        "height": result.height,
+        "codec": result.codec,
+        "message": "Video validation passed"
+    }
+
 
 @app.post("/api/jobs/create")
 @user_limiter.limit("10/minute")

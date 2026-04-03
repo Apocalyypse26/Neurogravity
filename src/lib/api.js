@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { supabase } from './supabase';
 
 const POLL_INTERVAL = 1500;
 const MAX_POLL_ATTEMPTS = 60;
@@ -159,4 +160,38 @@ export async function getCheckoutStatus(sessionId) {
     throw new Error('Failed to get checkout status');
   }
   return response.json();
+}
+
+// --- Video Validation Functions ---
+
+export async function validateVideo(fileUrl, maxDuration = 20) {
+  const response = await fetch(`${API_BASE_URL}/api/validate-video`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${await getAuthToken()}`
+    },
+    body: JSON.stringify({
+      file_url: fileUrl,
+      max_duration: maxDuration
+    })
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+    const errorDetail = error.detail || {};
+    const errors = errorDetail.errors || [errorDetail.message || 'Validation failed'];
+    throw new Error(errors.join(', '));
+  }
+  
+  return response.json();
+}
+
+export async function getAuthToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || '';
+  } catch {
+    return '';
+  }
 }
