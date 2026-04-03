@@ -115,15 +115,15 @@ export default function ProjectView({ session }) {
     setCreditsLoading(true)
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('available_credits')
-        .eq('id', session.user.id)
+        .from('user_profiles')
+        .select('credits')
+        .eq('user_id', session.user.id)
         .single()
       
       if (error) {
         console.error('Error fetching profile:', error)
       } else if (data) {
-        setCredits(data.available_credits)
+        setCredits(data.credits)
       }
     } catch (err) {
       console.error('Failed to fetch profile:', err)

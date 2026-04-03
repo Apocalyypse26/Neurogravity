@@ -2,9 +2,12 @@ import os
 import stripe
 from typing import Dict, Any, Optional
 import threading
+import asyncio
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 _processed_webhooks: Dict[str, float] = {}
 _webhook_lock = threading.Lock()
@@ -12,6 +15,42 @@ _WEBHOOK_EXPIRY_SECONDS = 86400
 
 _cached_prices: Dict[str, str] = {}
 _price_cache_lock = threading.Lock()
+
+
+async def _add_credits_to_user(user_id: str, credits: int) -> bool:
+    """Add credits to user account via Supabase RPC (service role)"""
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        print("[STRIPE] ERROR: Supabase credentials not configured for credit addition")
+        return False
+    
+    try:
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        async with asyncio.timeout(10):
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/rpc/buy_credits",
+                    headers=headers,
+                    json={"amount": credits}
+                )
+                
+                if response.status_code in (200, 201):
+                    print(f"[STRIPE] Successfully added {credits} credits to user {user_id}")
+                    return True
+                else:
+                    print(f"[STRIPE] ERROR: Failed to add credits - {response.status_code}: {response.text}")
+                    return False
+    except asyncio.TimeoutError:
+        print("[STRIPE] ERROR: Timeout adding credits to user")
+        return False
+    except Exception as e:
+        print(f"[STRIPE] ERROR: Exception adding credits: {e}")
+        return False
 
 
 def _cleanup_expired_webhooks():
@@ -175,10 +214,19 @@ class StripeService:
         if event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
             metadata = session.get("metadata", {})
+            user_id = metadata.get("user_id")
+            credits = int(metadata.get("credits", 0))
+            
+            if user_id and credits > 0:
+                try:
+                    asyncio.run(_add_credits_to_user(user_id, credits))
+                except Exception as e:
+                    print(f"[WEBHOOK] Warning: Credit addition failed but webhook processed: {e}")
+            
             return {
                 "event": "credits_purchased",
-                "user_id": metadata.get("user_id"),
-                "credits": int(metadata.get("credits", 0)),
+                "user_id": user_id,
+                "credits": credits,
                 "package_id": metadata.get("package_id"),
                 "session_id": session["id"],
             }

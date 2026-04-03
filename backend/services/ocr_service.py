@@ -2,6 +2,7 @@ import io
 from typing import Optional, Dict, Any
 import httpx
 from PIL import Image
+from .tribe_service import is_url_safe
 
 class OCRResult:
     def __init__(self,
@@ -35,6 +36,9 @@ class OCRService:
             return await self._extract_from_video(file_url)
 
     async def _extract_from_image(self, file_url: str) -> OCRResult:
+        if not is_url_safe(file_url):
+            raise ValueError(f"URL not allowed for security reasons: {file_url}")
+        
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(file_url)

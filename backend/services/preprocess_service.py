@@ -3,6 +3,7 @@ import os
 from typing import Optional, Tuple
 from PIL import Image
 import httpx
+from .tribe_service import is_url_safe
 
 class PreprocessResult:
     def __init__(self, 
@@ -41,6 +42,9 @@ class PreprocessService:
 
     async def _process_image(self, file_url: str) -> PreprocessResult:
         print("[PREPROCESS] Converting image to video frames...")
+        
+        if not is_url_safe(file_url):
+            raise ValueError(f"URL not allowed for security reasons: {file_url}")
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

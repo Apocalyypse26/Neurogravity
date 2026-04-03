@@ -42,6 +42,7 @@ from services import (
     auth_service,
     admin_service
 )
+from services.tribe_service import is_url_safe
 from services.stripe_service import stripe_service, CREDIT_PACKAGES, SUBSCRIPTION_PLANS
 
 limiter = Limiter(key_func=get_remote_address)
@@ -114,6 +115,7 @@ MAX_FILES_PER_PROJECT = 10
 
 class AnalysisRequest(BaseModel):
     upload_id: str
+    user_id: str
     media_type: str
     file_url: str
 
@@ -124,6 +126,13 @@ class AnalysisRequest(BaseModel):
             raise ValueError('Invalid upload_id length')
         if not v.replace('-', '').replace('_', '').isalnum():
             raise ValueError('upload_id contains invalid characters')
+        return v
+
+    @field_validator('user_id')
+    @classmethod
+    def validate_user_id(cls, v):
+        if not v or len(v) < 1:
+            raise ValueError('user_id is required')
         return v
 
     @field_validator('media_type')
@@ -143,13 +152,13 @@ class AnalysisRequest(BaseModel):
             raise ValueError('file_url exceeds maximum length')
         if not v.startswith(('http://', 'https://')):
             raise ValueError('file_url must be a valid HTTP(S) URL')
-        allowed_domains = ['supabase.co', 'localhost']
-        if not any(domain in v for domain in allowed_domains):
-            raise ValueError('file_url must be from an allowed domain')
+        if not is_url_safe(v):
+            raise ValueError('file_url must be from an allowed domain (Supabase storage)')
         return v
 
 class CreateJobRequest(BaseModel):
     upload_id: str
+    user_id: str
     media_type: str
     file_url: str
 
@@ -160,6 +169,13 @@ class CreateJobRequest(BaseModel):
             raise ValueError('Invalid upload_id length')
         if not v.replace('-', '').replace('_', '').isalnum():
             raise ValueError('upload_id contains invalid characters')
+        return v
+
+    @field_validator('user_id')
+    @classmethod
+    def validate_user_id(cls, v):
+        if not v or len(v) < 1:
+            raise ValueError('user_id is required')
         return v
 
     @field_validator('media_type')
@@ -179,9 +195,8 @@ class CreateJobRequest(BaseModel):
             raise ValueError('file_url exceeds maximum length')
         if not v.startswith(('http://', 'https://')):
             raise ValueError('file_url must be a valid HTTP(S) URL')
-        allowed_domains = ['supabase.co', 'localhost']
-        if not any(domain in v for domain in allowed_domains):
-            raise ValueError('file_url must be from an allowed domain')
+        if not is_url_safe(v):
+            raise ValueError('file_url must be from an allowed domain (Supabase storage)')
         return v
 
 class FileValidationRequest(BaseModel):
@@ -293,7 +308,7 @@ async def create_analysis_job(request: Request, req: CreateJobRequest):
             "message": "Existing job found"
         }
     
-    job_id = job_manager.create_job(req.upload_id, req.media_type, req.file_url)
+    job_id = job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
     
     asyncio.create_task(
         job_manager.run_job(
@@ -332,7 +347,7 @@ async def get_job_by_upload(request: Request, upload_id: str):
 @app.post("/api/analyze")
 @user_limiter.limit("10/minute")
 async def analyze_target(request: Request, req: AnalysisRequest):
-    job_id = job_manager.create_job(req.upload_id, req.media_type, req.file_url)
+    job_id = job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
     
     try:
         result = await job_manager.run_job(
