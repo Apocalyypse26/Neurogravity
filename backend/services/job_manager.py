@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import time
+import os
 from typing import Dict, Optional, Any, Callable
 from enum import Enum
 from dataclasses import dataclass, field
@@ -46,7 +47,28 @@ class JobManager:
     def __init__(self):
         self.jobs: Dict[str, AnalysisJob] = {}
         self._running_tasks: Dict[str, asyncio.Task] = {}
-        print("[JOB_MANAGER] Initialized")
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_interval = int(os.getenv("JOB_CLEANUP_INTERVAL_SECONDS", "300"))
+        self._max_job_age = int(os.getenv("MAX_JOB_AGE_SECONDS", "3600"))
+        print(f"[JOB_MANAGER] Initialized (cleanup every {self._cleanup_interval}s, max age {self._max_job_age}s)")
+
+    def start_cleanup_scheduler(self):
+        if self._cleanup_task is not None and not self._cleanup_task.done():
+            print("[JOB_MANAGER] Cleanup scheduler already running")
+            return
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        print("[JOB_MANAGER] Started scheduled cleanup task")
+
+    async def _cleanup_loop(self):
+        while True:
+            await asyncio.sleep(self._cleanup_interval)
+            self.cleanup_old_jobs(self._max_job_age)
+
+    def stop_cleanup_scheduler(self):
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            self._cleanup_task = None
+            print("[JOB_MANAGER] Stopped cleanup scheduler")
 
     def create_job(self, upload_id: str, media_type: str, file_url: str) -> str:
         job_id = str(uuid.uuid4())

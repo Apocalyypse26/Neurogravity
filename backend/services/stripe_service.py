@@ -1,9 +1,60 @@
 import os
 import stripe
 from typing import Dict, Any, Optional
+import threading
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+_processed_webhooks: Dict[str, float] = {}
+_webhook_lock = threading.Lock()
+_WEBHOOK_EXPIRY_SECONDS = 86400
+
+_cached_prices: Dict[str, str] = {}
+_price_cache_lock = threading.Lock()
+
+
+def _cleanup_expired_webhooks():
+    import time
+    current_time = time.time()
+    expired = [
+        event_id for event_id, timestamp in _processed_webhooks.items()
+        if current_time - timestamp > _WEBHOOK_EXPIRY_SECONDS
+    ]
+    for event_id in expired:
+        del _processed_webhooks[event_id]
+
+
+def _is_webhook_processed(event_id: str) -> bool:
+    return event_id in _processed_webhooks
+
+
+def _mark_webhook_processed(event_id: str):
+    import time
+    _processed_webhooks[event_id] = time.time()
+    _cleanup_expired_webhooks()
+
+
+def _get_or_create_price(plan_id: str, price_cents: int, product_name: str) -> str:
+    with _price_cache_lock:
+        if plan_id in _cached_prices:
+            return _cached_prices[plan_id]
+        
+        product = stripe.Product.create(
+            name=f"NEUROX {product_name}",
+            active=True,
+        )
+        
+        price = stripe.Price.create(
+            currency="usd",
+            unit_amount=price_cents,
+            recurring={"interval": "month"},
+            product=product.id,
+        )
+        
+        _cached_prices[plan_id] = price.id
+        
+        return price.id
 
 CREDIT_PACKAGES = {
     "credits_10": {"name": "10 Scans", "credits": 10, "price_cents": 1500, "price_display": "$15"},
@@ -84,17 +135,11 @@ class StripeService:
 
         plan = SUBSCRIPTION_PLANS[plan_id]
 
-        # Create or retrieve Stripe price
-        price = stripe.Price.create(
-            currency="usd",
-            unit_amount=plan["price_cents"],
-            recurring={"interval": "month"},
-            product_data={"name": f"NEUROX {plan['name']}"},
-        )
+        price_id = _get_or_create_price(plan_id, plan["price_cents"], plan["name"])
 
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
-            line_items=[{"price": price.id, "quantity": 1}],
+            line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription",
             success_url=success_url + "?session_id={CHECKOUT_SESSION_ID}",
             cancel_url=cancel_url,
@@ -117,6 +162,15 @@ class StripeService:
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
+
+        event_id = event.get("id", "")
+        
+        with _webhook_lock:
+            if _is_webhook_processed(event_id):
+                print(f"[WEBHOOK] Duplicate event already processed: {event_id}")
+                return {"event": "duplicate", "message": "Event already processed"}
+            
+            _mark_webhook_processed(event_id)
 
         if event["type"] == "checkout.session.completed":
             session = event["data"]["object"]

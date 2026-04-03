@@ -1,11 +1,25 @@
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from contextlib import asynccontextmanager
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
 import httpx
 from PIL import Image
 import io
@@ -32,23 +46,60 @@ from services.stripe_service import stripe_service, CREDIT_PACKAGES, SUBSCRIPTIO
 
 limiter = Limiter(key_func=get_remote_address)
 
+def get_user_based_key(request: Request) -> str:
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from services.auth_service import auth_service
+            user_id = auth_service.get_user_id_from_token(auth_header)
+            if user_id:
+                return f"user:{user_id}"
+        except (ImportError, AttributeError):
+            pass
+    return get_remote_address(request)
+
+
+user_limiter = Limiter(key_func=get_user_based_key)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"[STARTUP] NEUROX Backend v2.0 starting...")
     print(f"[STARTUP] TRIBE mode: {'REAL' if USE_REAL_TRIBE else 'MOCK'}")
     print(f"[STARTUP] Rate limiting enabled")
+    job_manager.start_cleanup_scheduler()
     yield
     print("[SHUTDOWN] Cleaning up...")
+    job_manager.stop_cleanup_scheduler()
     job_manager.cleanup_old_jobs(0)
 
 app = FastAPI(title="NEUROX API", version="2.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
+def get_cors_origins() -> list[str]:
+    env = os.getenv("ENVIRONMENT", "development")
+    cors_config = os.getenv("CORS_ORIGINS", "")
+    
+    if not cors_config:
+        if env == "production":
+            raise ValueError("CORS_ORIGINS must be configured in production")
+        print("[CORS] WARNING: No CORS_ORIGINS configured - defaulting to localhost only")
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    
+    origins = [o.strip() for o in cors_config.split(",") if o.strip()]
+    
+    if env == "production":
+        for origin in origins:
+            if "*" in origin:
+                raise ValueError(f"Wildcard CORS origins not allowed in production: {origin}")
+    
+    return origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(","),
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -223,7 +274,7 @@ async def validate_project_files(request: Request, data: dict):
     return {"valid": True, "remaining_slots": MAX_FILES_PER_PROJECT - current_count}
 
 @app.post("/api/jobs/create")
-@limiter.limit("10/minute")
+@user_limiter.limit("10/minute")
 async def create_analysis_job(request: Request, req: CreateJobRequest):
     existing_job = job_manager.get_job_by_upload(req.upload_id)
     if existing_job and existing_job.status == JobStatus.COMPLETED:
@@ -279,7 +330,7 @@ async def get_job_by_upload(request: Request, upload_id: str):
     return job.to_dict()
 
 @app.post("/api/analyze")
-@limiter.limit("10/minute")
+@user_limiter.limit("10/minute")
 async def analyze_target(request: Request, req: AnalysisRequest):
     job_id = job_manager.create_job(req.upload_id, req.media_type, req.file_url)
     
@@ -436,7 +487,7 @@ async def get_packages(request: Request):
 
 
 @app.post("/api/checkout")
-@limiter.limit("10/minute")
+@user_limiter.limit("5/minute")
 async def create_checkout(request: Request, req: CheckoutRequest):
     try:
         if req.package_id in CREDIT_PACKAGES:
@@ -527,7 +578,7 @@ async def verify_admin_status(request: Request):
 
 
 @app.get("/api/admin/uploads")
-@limiter.limit("30/minute")
+@user_limiter.limit("30/minute")
 async def get_admin_uploads(request: Request):
     """
     Get all uploads for admin dashboard.
@@ -554,7 +605,7 @@ async def get_admin_uploads(request: Request):
 
 
 @app.post("/api/admin/feedback")
-@limiter.limit("30/minute")
+@user_limiter.limit("30/minute")
 async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
     """
     Submit admin feedback for an upload.
@@ -582,7 +633,7 @@ async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
 
 
 @app.get("/api/admin/stats")
-@limiter.limit("30/minute")
+@user_limiter.limit("30/minute")
 async def get_admin_stats(request: Request):
     """
     Get platform-wide statistics for admin dashboard.
@@ -606,7 +657,7 @@ async def get_admin_stats(request: Request):
 
 
 @app.get("/api/admin/upload/{upload_id}")
-@limiter.limit("30/minute")
+@user_limiter.limit("30/minute")
 async def get_admin_upload(request: Request, upload_id: str):
     """
     Get a single upload by ID for admin view.

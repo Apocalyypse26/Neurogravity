@@ -7,9 +7,9 @@ import ProjectView from './pages/ProjectView'
 import ResultsView from './pages/ResultsView'
 import AdminDashboard from './pages/AdminDashboard'
 import Documentation from './pages/Documentation'
+import { ToastProvider } from './components/Toast'
 import '../style.css'
 
-// Lazy load supabase to prevent crashes if env vars are missing
 let supabase = null;
 try {
   const supabaseModule = await import('./lib/supabase');
@@ -56,30 +56,32 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Home session={session} />} />
-      <Route path="/auth" element={<AuthPage session={session} />} />
-      <Route path="/docs" element={<Documentation />} />
-      <Route path="/dashboard" element={
-        <RequireAuth>
-          <Dashboard session={session} />
-        </RequireAuth>
-      } />
-      <Route path="/dashboard/project/:projectId" element={
-        <RequireAuth>
-          <ProjectView session={session} />
-        </RequireAuth>
-      } />
-      <Route path="/dashboard/analysis/:uploadId" element={
-        <RequireAuth>
-          <ResultsView session={session} />
-        </RequireAuth>
-      } />
-      <Route path="/admin" element={
-        <RequireAuth>
-          <AdminDashboard session={session} />
-        </RequireAuth>
-      } />
-    </Routes>
+    <ToastProvider>
+      <Routes>
+        <Route path="/" element={<Home session={session} />} />
+        <Route path="/auth" element={<AuthPage session={session} />} />
+        <Route path="/docs" element={<Documentation />} />
+        <Route path="/dashboard" element={
+          <RequireAuth>
+            <Dashboard session={session} />
+          </RequireAuth>
+        } />
+        <Route path="/dashboard/project/:projectId" element={
+          <RequireAuth>
+            <ProjectView session={session} />
+          </RequireAuth>
+        } />
+        <Route path="/dashboard/analysis/:uploadId" element={
+          <RequireAuth>
+            <ResultsView session={session} />
+          </RequireAuth>
+        } />
+        <Route path="/admin" element={
+          <RequireAuth>
+            <AdminDashboard session={session} />
+          </RequireAuth>
+        } />
+      </Routes>
+    </ToastProvider>
   )
 }

@@ -9,9 +9,17 @@ class AdminService:
         self.admin_users_table = "admin_users"
         self.uploads_table = "uploads"
         self.projects_table = "projects"
+        
+        if not self.supabase_service_key:
+            env = os.getenv("ENVIRONMENT", "development")
+            if env == "production":
+                raise ValueError("SUPABASE_SERVICE_ROLE_KEY is required in production environments")
+            print("[ADMIN] WARNING: SUPABASE_SERVICE_ROLE_KEY not set - admin features disabled")
     
     def _get_service_headers(self) -> Dict[str, str]:
         """Get headers for service role authentication"""
+        if not self.supabase_service_key:
+            raise ValueError("SUPABASE_SERVICE_ROLE_KEY is not configured")
         return {
             "apikey": self.supabase_service_key,
             "Authorization": f"Bearer {self.supabase_service_key}",

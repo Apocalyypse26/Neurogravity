@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 import { exportToJSON } from '../lib/utils'
-import { Folder, Plus, LogOut, Code, Shield, Zap, ChevronRight, FolderOpen, Clock, MoreVertical, Check, X, Download, Link as LinkIcon, Database } from 'lucide-react'
+import { Folder, Plus, LogOut, Code, Shield, Zap, ChevronRight, FolderOpen, Clock, MoreVertical, Check, X, Download, Link as LinkIcon, Database, Trash2, Loader2 } from 'lucide-react'
+import ConfirmModal from '../components/ConfirmModal'
 
-const ProjectCard = ({ project, index, onExport }) => {
+const ProjectCard = ({ project, index, onExport, onDelete }) => {
   const [hovered, setHovered] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -19,6 +20,13 @@ const ProjectCard = ({ project, index, onExport }) => {
 
   const handleExport = () => {
     onExport(project)
+    setShowMenu(false)
+  }
+
+  const handleDelete = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onDelete(project)
     setShowMenu(false)
   }
   
@@ -71,6 +79,13 @@ const ProjectCard = ({ project, index, onExport }) => {
                   <Download size={14} />
                   Export JSON
                 </button>
+                <button 
+                  className="menu-option danger"
+                  onClick={handleDelete}
+                >
+                  <Trash2 size={14} />
+                  Delete Project
+                </button>
               </div>
             )}
           </div>
@@ -91,6 +106,24 @@ const ProjectCard = ({ project, index, onExport }) => {
   )
 }
 
+const LoadingSkeleton = ({ type = 'card' }) => {
+  if (type === 'card') {
+    return (
+      <div className="skeleton-card">
+        <div className="skeleton-icon"></div>
+        <div className="skeleton-title"></div>
+        <div className="skeleton-meta"></div>
+      </div>
+    )
+  }
+  return (
+    <div className="skeleton-badge">
+      <div className="skeleton-badge-icon"></div>
+      <div className="skeleton-badge-text"></div>
+    </div>
+  )
+}
+
 const StatCard = ({ icon, value, label, color }) => (
   <div className="stat-card-mini" style={{ '--stat-color': color }}>
     <div className="stat-icon">{icon}</div>
@@ -104,12 +137,21 @@ const StatCard = ({ icon, value, label, color }) => (
 export default function Dashboard({ session }) {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingCredits, setLoadingCredits] = useState(true)
   const [newProjectName, setNewProjectName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [paymentMessage, setPaymentMessage] = useState('')
   const [credits, setCredits] = useState(null)
+  const [creditsLoading, setCreditsLoading] = useState(null)
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, project: null })
+  const [deletingProject, setDeletingProject] = useState(null)
   const navigate = useNavigate()
+
+  const showToast = (message, type = 'info') => {
+    const event = new CustomEvent('showToast', { detail: { message, type } })
+    window.dispatchEvent(event)
+  }
 
   useEffect(() => {
     fetchProjects()
@@ -125,23 +167,45 @@ export default function Dashboard({ session }) {
   }, [])
 
   const fetchCredits = async () => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('credits')
-      .eq('user_id', session.user.id)
-      .single()
-    
-    if (!error && data) setCredits(data.credits)
+    setLoadingCredits(true)
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('credits')
+        .eq('user_id', session.user.id)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching credits:', error)
+      } else if (data) {
+        setCredits(data.credits)
+      }
+    } catch (err) {
+      console.error('Failed to fetch credits:', err)
+    } finally {
+      setLoadingCredits(false)
+    }
   }
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false })
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
       
-    if (!error && data) setProjects(data)
-    setLoading(false)
+      if (error) {
+        showToast('Failed to load projects. Please refresh the page.', 'error')
+        console.error('Error fetching projects:', error)
+      } else {
+        setProjects(data || [])
+      }
+    } catch (err) {
+      showToast('Network error loading projects. Please try again.', 'error')
+      console.error('Failed to fetch projects:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleCreateProject = async (e) => {
@@ -149,17 +213,61 @@ export default function Dashboard({ session }) {
     if (!newProjectName.trim()) return
     setIsCreating(true)
     
-    const { data, error } = await supabase
-      .from('projects')
-      .insert([{ name: newProjectName, user_id: session.user.id }])
-      .select()
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([{ name: newProjectName, user_id: session.user.id }])
+        .select()
       
-    if (!error && data) {
-      setProjects([data[0], ...projects])
-      setNewProjectName('')
-      navigate(`/dashboard/project/${data[0].id}`)
+      if (error) {
+        showToast('Failed to create project. Please try again.', 'error')
+        console.error('Error creating project:', error)
+      } else if (data) {
+        showToast('Project created successfully!', 'success')
+        setProjects([data[0], ...projects])
+        setNewProjectName('')
+        navigate(`/dashboard/project/${data[0].id}`)
+      }
+    } catch (err) {
+      showToast('Network error creating project. Please try again.', 'error')
+      console.error('Failed to create project:', err)
+    } finally {
+      setIsCreating(false)
     }
-    setIsCreating(false)
+  }
+
+  const handleDeleteProject = async () => {
+    if (!deleteModal.project) return
+    setDeletingProject(deleteModal.project.id)
+
+    try {
+      const { error: uploadError } = await supabase
+        .from('uploads')
+        .delete()
+        .eq('project_id', deleteModal.project.id)
+
+      if (uploadError) {
+        console.error('Error deleting uploads:', uploadError)
+      }
+
+      const { error: projectError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', deleteModal.project.id)
+
+      if (projectError) {
+        showToast('Failed to delete project. Please try again.', 'error')
+        console.error('Error deleting project:', projectError)
+      } else {
+        setProjects(projects.filter(p => p.id !== deleteModal.project.id))
+        showToast('Project deleted successfully', 'success')
+      }
+    } catch (err) {
+      showToast('Network error deleting project. Please try again.', 'error')
+      console.error('Failed to delete project:', err)
+    } finally {
+      setDeletingProject(null)
+    }
   }
 
   const handleLogout = async () => {
@@ -168,19 +276,25 @@ export default function Dashboard({ session }) {
   }
 
   const handleExportProject = async (project) => {
-    const { data: uploads } = await supabase
-      .from('uploads')
-      .select('*')
-      .eq('project_id', project.id)
-    
-    exportToJSON({
-      project: {
-        id: project.id,
-        name: project.name,
-        createdAt: project.created_at
-      },
-      uploads: uploads || []
-    }, `neurox-project-${project.name}`)
+    try {
+      const { data: uploads } = await supabase
+        .from('uploads')
+        .select('*')
+        .eq('project_id', project.id)
+      
+      exportToJSON({
+        project: {
+          id: project.id,
+          name: project.name,
+          createdAt: project.created_at
+        },
+        uploads: uploads || []
+      }, `neurox-project-${project.name}`)
+      showToast('Project exported successfully!', 'success')
+    } catch (err) {
+      showToast('Failed to export project. Please try again.', 'error')
+      console.error('Failed to export project:', err)
+    }
   }
 
   return (
@@ -206,20 +320,25 @@ export default function Dashboard({ session }) {
           </span>
         </div>
         <div className="header-right">
-          {credits !== null && (
+          {!loadingCredits ? (
             <div className={`credit-badge ${credits <= 5 ? 'credit-low' : ''}`}>
               <Database size={13} />
-              <span className="credit-count">{credits}</span>
+              <span className="credit-count">{credits !== null ? credits : '—'}</span>
               <span className="credit-label">CREDITS</span>
+            </div>
+          ) : (
+            <div className="credit-badge loading">
+              <Loader2 size={13} className="spin" />
+              <span className="credit-count">...</span>
             </div>
           )}
           <Link to="/admin" className="header-btn admin-btn">
             <Shield size={16} />
-            Admin
+            <span className="btn-text">Admin</span>
           </Link>
           <button onClick={handleLogout} className="header-btn logout-btn">
             <LogOut size={16} />
-            Exit
+            <span className="btn-text">Exit</span>
           </button>
         </div>
       </header>
@@ -252,9 +371,10 @@ export default function Dashboard({ session }) {
             </div>
 
             {loading ? (
-              <div className="projects-loading">
-                <div className="loading-spinner" />
-                <span>Scanning project directory...</span>
+              <div className="projects-grid">
+                {[1, 2, 3].map(i => (
+                  <LoadingSkeleton key={i} type="card" />
+                ))}
               </div>
             ) : projects.length === 0 ? (
               <div className="empty-state">
@@ -267,7 +387,13 @@ export default function Dashboard({ session }) {
             ) : (
               <div className="projects-grid">
                   {projects.map((project, i) => (
-                  <ProjectCard key={project.id} project={project} index={i} onExport={handleExportProject} />
+                  <ProjectCard 
+                    key={project.id} 
+                    project={project} 
+                    index={i} 
+                    onExport={handleExportProject}
+                    onDelete={(p) => setDeleteModal({ isOpen: true, project: p })}
+                  />
                 ))}
               </div>
             )}
@@ -346,6 +472,17 @@ export default function Dashboard({ session }) {
           </section>
         </div>
       </main>
+
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, project: null })}
+        onConfirm={handleDeleteProject}
+        title="Delete Project"
+        message={`Are you sure you want to delete "${deleteModal.project?.name}"? This will permanently remove all uploads and analysis data associated with this project.`}
+        confirmText={deletingProject === deleteModal.project?.id ? 'Deleting...' : 'Delete Project'}
+        type="danger"
+        loading={deletingProject === deleteModal.project?.id}
+      />
 
       <style>{`
         .dashboard-page {
@@ -821,6 +958,59 @@ export default function Dashboard({ session }) {
           color: var(--color-primary);
         }
 
+        .menu-option.danger {
+          color: var(--color-danger);
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          margin-top: 6px;
+          padding-top: 12px;
+        }
+
+        .menu-option.danger:hover {
+          background: rgba(252, 25, 53, 0.15);
+          color: var(--color-danger);
+        }
+
+        /* Loading Skeleton */
+        .skeleton-card {
+          padding: 1.5rem;
+          background: linear-gradient(135deg, rgba(25, 15, 40, 0.8) 0%, rgba(15, 8, 25, 0.9) 100%);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 16px;
+          animation: skeletonPulse 1.5s ease infinite;
+        }
+
+        @keyframes skeletonPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.6; }
+        }
+
+        .skeleton-icon {
+          width: 40px;
+          height: 40px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 10px;
+          margin-bottom: 1rem;
+        }
+
+        .skeleton-title {
+          width: 70%;
+          height: 20px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
+          margin-bottom: 0.75rem;
+        }
+
+        .skeleton-meta {
+          width: 50%;
+          height: 14px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 4px;
+        }
+
+        .credit-badge.loading {
+          animation: skeletonPulse 1s ease infinite;
+        }
+
         .project-name {
           font-size: 1.1rem;
           font-weight: 700;
@@ -1073,24 +1263,68 @@ export default function Dashboard({ session }) {
           }
         }
 
+        @media (max-width: 768px) {
+          .header-right {
+            gap: 0.5rem;
+          }
+          .header-btn {
+            padding: 0.5rem 0.75rem;
+          }
+          .credit-badge {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.7rem;
+          }
+          .credit-count {
+            font-size: 0.9rem;
+          }
+        }
+
         @media (max-width: 600px) {
           .dashboard-page {
             min-height: 100dvh;
           }
           .dashboard-header {
             padding: 0 1rem;
-            flex-wrap: wrap;
-            gap: 0.5rem;
+            height: 60px;
+          }
+          .header-left {
+            flex: 1;
+            min-width: 0;
+          }
+          .header-logo {
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+          }
+          .logo-icon-small {
+            width: 28px;
+            height: 28px;
+          }
+          .header-divider {
+            display: none;
           }
           .header-location {
             display: none;
           }
-          .header-actions {
-            width: 100%;
-            justify-content: space-between;
+          .header-right {
+            flex-shrink: 0;
+          }
+          .btn-text {
+            display: none;
+          }
+          .header-btn {
+            padding: 0.5rem;
+            min-width: 40px;
+            justify-content: center;
           }
           .dashboard-main {
             padding: 1.5rem 1rem;
+            padding-top: 80px;
+          }
+          .dashboard-welcome h1 {
+            font-size: 1.5rem;
+          }
+          .dashboard-welcome p {
+            font-size: 0.9rem;
           }
           .dashboard-grid-layout {
             gap: 1.5rem;
@@ -1101,6 +1335,9 @@ export default function Dashboard({ session }) {
           }
           .project-card {
             padding: 1.25rem;
+          }
+          .project-name {
+            font-size: 1rem;
           }
           .quick-stats {
             flex-direction: column;
@@ -1119,10 +1356,26 @@ export default function Dashboard({ session }) {
             padding: 1.5rem;
           }
           .create-input {
-            font-size: 16px; /* Prevents zoom on iOS */
+            font-size: 16px;
           }
           .create-button {
             padding: 0.875rem 1.5rem;
+          }
+          .section-title-group h2 {
+            font-size: 1.1rem;
+          }
+        }
+
+        @media (max-width: 400px) {
+          .header-logo span:not(.logo-icon-small) {
+            display: none;
+          }
+          .logo-icon-small {
+            width: 32px;
+            height: 32px;
+          }
+          .admin-btn {
+            display: none;
           }
         }
       `}</style>

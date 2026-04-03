@@ -7,7 +7,16 @@ class AuthService:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
-        self.supabase_jwt_secret = os.getenv("SUPABASE_JWT_SECRET", self.supabase_anon_key)
+        configured_jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+        
+        if not configured_jwt_secret:
+            env = os.getenv("ENVIRONMENT", "development")
+            if env == "production":
+                raise ValueError("SUPABASE_JWT_SECRET is required in production environments")
+            print("[AUTH] WARNING: SUPABASE_JWT_SECRET not set - using anon key (INSECURE for production)")
+            configured_jwt_secret = self.supabase_anon_key
+        
+        self.supabase_jwt_secret = configured_jwt_secret
     
     def verify_token(self, authorization: str) -> Optional[dict]:
         """Extract and verify JWT token, return decoded payload"""

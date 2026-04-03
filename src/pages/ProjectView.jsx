@@ -3,9 +3,11 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useDropzone } from 'react-dropzone'
 import StripeCheckout from '../components/StripeCheckout'
+import ConfirmModal from '../components/ConfirmModal'
 import { 
   ChevronLeft, Upload, FileImageIcon, Film, Trash2, AlertCircle, 
-  Lock, CreditCard, FolderOpen, Zap, X, Check, Loader2, Grid, List
+  Lock, CreditCard, FolderOpen, Zap, X, Check, Loader2, Grid, List,
+  RefreshCw
 } from 'lucide-react'
 
 const getVideoDuration = (file) => {
@@ -48,14 +50,14 @@ const MediaCard = ({ upload, onDelete, onAnalyze }) => {
         {upload.media_type === 'video' ? (
           <video src={upload.file_url} muted preload="metadata" />
         ) : (
-          <img src={upload.file_url} alt={upload.file_name} />
+          <img src={upload.file_url} alt={upload.file_name} loading="lazy" />
         )}
         <div className="media-overlay">
           <Link to={`/dashboard/analysis/${upload.id}`} className="media-action analyze">
             <Zap size={18} />
             Analyze
           </Link>
-          <button onClick={() => onDelete(upload.id, upload.file_url)} className="media-action delete">
+          <button onClick={() => onDelete(upload)} className="media-action delete">
             <Trash2 size={18} />
           </button>
         </div>
@@ -79,11 +81,21 @@ export default function ProjectView({ session }) {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState([])
   const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const [credits, setCredits] = useState(null)
+  const [creditsLoading, setCreditsLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState('grid')
   const [isDragActive, setIsDragActive] = useState(false)
   const [showStripe, setShowStripe] = useState(false)
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, upload: null })
+  const [deletingUpload, setDeletingUpload] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const showToast = (message, type = 'info') => {
+    const event = new CustomEvent('showToast', { detail: { message, type } })
+    window.dispatchEvent(event)
+  }
 
   useEffect(() => {
     fetchProject()
@@ -93,14 +105,31 @@ export default function ProjectView({ session }) {
     
     const urlParams = new URLSearchParams(window.location.search)
     if (urlParams.get('payment') === 'success') {
+      setSuccessMsg('Payment successful! Your credits have been added.')
       fetchProfile()
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [projectId])
 
   const fetchProfile = async () => {
-    const { data } = await supabase.from('profiles').select('available_credits').eq('id', session.user.id).single()
-    if (data) setCredits(data.available_credits)
+    setCreditsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('available_credits')
+        .eq('id', session.user.id)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching profile:', error)
+      } else if (data) {
+        setCredits(data.available_credits)
+      }
+    } catch (err) {
+      console.error('Failed to fetch profile:', err)
+    } finally {
+      setCreditsLoading(false)
+    }
   }
 
   const handleBuyCredits = () => {
@@ -109,29 +138,93 @@ export default function ProjectView({ session }) {
 
   const handleStripeSuccess = () => {
     setShowStripe(false)
+    setSuccessMsg('Credits purchased successfully!')
     fetchProfile()
+    showToast('Credits added to your account!', 'success')
   }
 
   const fetchProject = async () => {
-    const { data } = await supabase.from('projects').select('*').eq('id', projectId).single()
-    if (data) setProject(data)
+    try {
+      const { data, error } = await supabase.from('projects').select('*').eq('id', projectId).single()
+      if (error) {
+        showToast('Failed to load project. Please try again.', 'error')
+        console.error('Error fetching project:', error)
+      } else {
+        setProject(data)
+      }
+    } catch (err) {
+      showToast('Network error loading project.', 'error')
+      console.error('Failed to fetch project:', err)
+    }
   }
 
   const fetchUploads = async () => {
-    const { data } = await supabase.from('uploads').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
-    if (data) setUploads(data)
-    setLoading(false)
+    try {
+      const { data, error } = await supabase
+        .from('uploads')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        showToast('Failed to load uploads. Please try again.', 'error')
+        console.error('Error fetching uploads:', error)
+      } else {
+        setUploads(data || [])
+      }
+    } catch (err) {
+      showToast('Network error loading uploads.', 'error')
+      console.error('Failed to fetch uploads:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDelete = async (uploadId, fileUrl) => {
-    const fileName = fileUrl.split('/').pop()
-    await supabase.storage.from('project_files').remove([fileName])
-    await supabase.from('uploads').delete().eq('id', uploadId)
-    setUploads(uploads.filter(u => u.id !== uploadId))
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await Promise.all([fetchProject(), fetchUploads(), fetchProfile()])
+    setRefreshing(false)
+    showToast('Data refreshed successfully', 'success')
+  }
+
+  const handleDeleteUpload = async () => {
+    if (!deleteModal.upload) return
+    setDeletingUpload(deleteModal.upload.id)
+
+    try {
+      const fileName = deleteModal.upload.file_url.split('/').pop()
+      
+      const { error: storageError } = await supabase.storage
+        .from('project_files')
+        .remove([fileName])
+
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError)
+      }
+
+      const { error: dbError } = await supabase
+        .from('uploads')
+        .delete()
+        .eq('id', deleteModal.upload.id)
+
+      if (dbError) {
+        showToast('Failed to delete file. Please try again.', 'error')
+        console.error('Error deleting upload:', dbError)
+      } else {
+        setUploads(uploads.filter(u => u.id !== deleteModal.upload.id))
+        showToast('File deleted successfully', 'success')
+      }
+    } catch (err) {
+      showToast('Network error deleting file.', 'error')
+      console.error('Failed to delete upload:', err)
+    } finally {
+      setDeletingUpload(null)
+    }
   }
 
   const onDrop = useCallback(async (acceptedFiles) => {
     setErrorMsg('')
+    setSuccessMsg('')
     
     if (uploads.length + acceptedFiles.length > 10) {
       setErrorMsg('Limit exceeded: A project can hold a maximum of 10 files.')
@@ -142,6 +235,7 @@ export default function ProjectView({ session }) {
     setUploadProgress(acceptedFiles.map(f => ({ file: f, progress: 0, status: 'uploading' })))
     
     let completedCount = 0
+    let failedCount = 0
     
     for (const file of acceptedFiles) {
       const isVideo = file.type.startsWith('video/')
@@ -151,7 +245,8 @@ export default function ProjectView({ session }) {
         setUploadProgress(prev => prev.map(p => 
           p.file === file ? { ...p, status: 'error' } : p
         ))
-        setErrorMsg(`File rejected: Image ${file.name} exceeds 8MB limit.`)
+        setErrorMsg(`Image rejected: "${file.name}" exceeds 8MB limit.`)
+        failedCount++
         continue
       }
       
@@ -159,18 +254,24 @@ export default function ProjectView({ session }) {
         setUploadProgress(prev => prev.map(p => 
           p.file === file ? { ...p, status: 'error' } : p
         ))
-        setErrorMsg(`File rejected: Video ${file.name} exceeds 25MB limit.`)
+        setErrorMsg(`Video rejected: "${file.name}" exceeds 25MB limit.`)
+        failedCount++
         continue
       }
 
       if (isVideo) {
-        const duration = await getVideoDuration(file)
-        if (duration > 20) {
-          setUploadProgress(prev => prev.map(p => 
-            p.file === file ? { ...p, status: 'error' } : p
-          ))
-          setErrorMsg(`File rejected: Video ${file.name} duration exceeds 20 seconds.`)
-          continue
+        try {
+          const duration = await getVideoDuration(file)
+          if (duration > 20) {
+            setUploadProgress(prev => prev.map(p => 
+              p.file === file ? { ...p, status: 'error' } : p
+            ))
+            setErrorMsg(`Video rejected: "${file.name}" exceeds 20 seconds duration.`)
+            failedCount++
+            continue
+          }
+        } catch (err) {
+          console.error('Error checking video duration:', err)
         }
       }
 
@@ -192,7 +293,8 @@ export default function ProjectView({ session }) {
         setUploadProgress(prev => prev.map(p => 
           p.file === file ? { ...p, status: 'error' } : p
         ))
-        setErrorMsg(`Error uploading ${file.name}: ${uploadError.message}`)
+        setErrorMsg(`Upload failed: ${file.name}. Please try again.`)
+        failedCount++
         continue
       }
 
@@ -216,13 +318,27 @@ export default function ProjectView({ session }) {
         ))
         setUploads(prev => [dbData[0], ...prev])
         completedCount++
+      } else {
+        setUploadProgress(prev => prev.map(p => 
+          p.file === file ? { ...p, status: 'error' } : p
+        ))
+        failedCount++
       }
+    }
+    
+    if (completedCount > 0) {
+      setSuccessMsg(`Successfully uploaded ${completedCount} file${completedCount > 1 ? 's' : ''}.`)
+      showToast(`Uploaded ${completedCount} file${completedCount > 1 ? 's' : ''} successfully!`, 'success')
+    }
+    
+    if (failedCount > 0 && completedCount === 0) {
+      showToast(`Failed to upload ${failedCount} file${failedCount > 1 ? 's' : ''}.`, 'error')
     }
     
     setTimeout(() => {
       setUploading(false)
       setUploadProgress([])
-    }, 1000)
+    }, 1500)
   }, [projectId, session, uploads.length])
 
   const { getRootProps, getInputProps, isDragActive: isDropzoneActive } = useDropzone({ 
@@ -245,13 +361,25 @@ export default function ProjectView({ session }) {
       <header className={`project-header ${mounted ? 'mounted' : ''}`}>
         <Link to="/dashboard" className="back-link">
           <ChevronLeft size={20} />
-          Back to Dashboard
+          <span className="back-text">Dashboard</span>
         </Link>
         <div className="header-stats">
-          <div className="stat-pill credits">
+          <button 
+            className={`refresh-btn ${refreshing ? 'spinning' : ''}`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh data"
+          >
+            <RefreshCw size={16} />
+          </button>
+          <div className={`stat-pill credits ${credits === 0 ? 'danger' : ''}`}>
             <Zap size={14} />
             <span>SCANS:</span>
-            <strong className={credits === 0 ? 'danger' : ''}>{credits !== null ? credits : '...'}</strong>
+            {!creditsLoading ? (
+              <strong>{credits !== null ? credits : '—'}</strong>
+            ) : (
+              <strong className="loading">...</strong>
+            )}
           </div>
           <div className="stat-pill">
             <span>FILES:</span>
@@ -271,8 +399,18 @@ export default function ProjectView({ session }) {
         {errorMsg && (
           <div className="error-banner">
             <AlertCircle size={18} />
-            {errorMsg}
+            <span>{errorMsg}</span>
             <button onClick={() => setErrorMsg('')} className="dismiss-btn">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="success-banner">
+            <Check size={18} />
+            <span>{successMsg}</span>
+            <button onClick={() => setSuccessMsg('')} className="dismiss-btn success">
               <X size={16} />
             </button>
           </div>
@@ -376,7 +514,7 @@ export default function ProjectView({ session }) {
                   <MediaCard 
                     key={u.id} 
                     upload={u} 
-                    onDelete={handleDelete}
+                    onDelete={(upload) => setDeleteModal({ isOpen: true, upload })}
                     onAnalyze={() => {}}
                   />
                 ))}
@@ -394,6 +532,17 @@ export default function ProjectView({ session }) {
           onSuccess={handleStripeSuccess}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, upload: null })}
+        onConfirm={handleDeleteUpload}
+        title="Delete File"
+        message={`Are you sure you want to delete "${deleteModal.upload?.file_name}"? This action cannot be undone.`}
+        confirmText={deletingUpload === deleteModal.upload?.id ? 'Deleting...' : 'Delete File'}
+        type="danger"
+        loading={deletingUpload === deleteModal.upload?.id}
+      />
 
       <style>{`
         .project-page {
@@ -1012,13 +1161,146 @@ export default function ProjectView({ session }) {
           }
         }
 
+        @media (max-width: 768px) {
+          .back-text {
+            display: none;
+          }
+          .header-stats {
+            gap: 0.5rem;
+          }
+          .stat-pill {
+            padding: 0.4rem 0.75rem;
+            font-size: 0.75rem;
+          }
+        }
+
         @media (max-width: 600px) {
+          .project-header {
+            padding: 0 1rem;
+            height: 60px;
+          }
+          .back-link {
+            font-size: 0.85rem;
+          }
           .project-main {
             padding: 1rem;
+            padding-top: 80px;
+          }
+          .project-title-section h1 {
+            font-size: 1.5rem;
           }
           .media-gallery.grid {
             grid-template-columns: repeat(2, 1fr);
           }
+          .media-gallery.list {
+            grid-template-columns: 1fr;
+          }
+          .stat-pill strong {
+            font-size: 0.9rem;
+          }
+        }
+
+        @media (max-width: 400px) {
+          .back-text {
+            display: none;
+          }
+          .stat-pill span {
+            display: none;
+          }
+        }
+
+        /* Success Banner */
+        .success-banner {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 1rem 1.5rem;
+          background: rgba(0, 212, 170, 0.1);
+          border: 1px solid rgba(0, 212, 170, 0.2);
+          border-radius: 12px;
+          color: #00d4aa;
+          margin-bottom: 1.5rem;
+          animation: slideDown 0.3s ease;
+        }
+
+        .dismiss-btn.success {
+          color: #00d4aa;
+        }
+
+        .dismiss-btn.success:hover {
+          opacity: 1;
+          background: rgba(0, 212, 170, 0.1);
+        }
+
+        /* Refresh Button */
+        .refresh-btn {
+          width: 36px;
+          height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 8px;
+          color: var(--color-text-muted);
+          cursor: pointer;
+          transition: var(--transition);
+        }
+
+        .refresh-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+          color: var(--color-primary);
+        }
+
+        .refresh-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .refresh-btn.spinning svg {
+          animation: spin 1s linear infinite;
+        }
+
+        .stat-pill.danger {
+          border-color: var(--color-danger);
+          background: rgba(252, 25, 53, 0.1);
+        }
+
+        .stat-pill.danger svg {
+          color: var(--color-danger);
+        }
+
+        .stat-pill.danger strong {
+          color: var(--color-danger);
+        }
+
+        .stat-pill strong.loading {
+          animation: skeletonPulse 1s ease infinite;
+        }
+
+        @keyframes skeletonPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Improved touch targets */
+        .media-action {
+          min-width: 44px;
+          min-height: 44px;
+        }
+
+        .view-toggle button {
+          min-width: 44px;
+          min-height: 44px;
         }
       `}</style>
     </div>

@@ -8,8 +8,57 @@ from PIL import Image
 import requests
 from io import BytesIO
 import base64
+from urllib.parse import urlparse
 
 USE_REAL_TRIBE = os.getenv("USE_REAL_TRIBE", "false").lower() == "true"
+
+ALLOWED_SSRF_DOMAINS = [
+    "supabase.co",
+    "supabase.in",
+    "storage.googleapis.com",
+    "googleapis.com",
+    "amazonaws.com",
+    "r2.cloudflarestorage.com",
+    "cdn.vercel-blobs.com",
+]
+
+def is_url_safe(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        
+        if parsed.scheme not in ("http", "https"):
+            return False
+        
+        hostname = parsed.hostname or ""
+        ip_address = parsed.hostname
+        
+        if hostname.startswith("localhost") or hostname.startswith("127.") or hostname.startswith("0."):
+            return False
+        
+        RESERVED_IP_RANGES = [
+            "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.",
+            "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.",
+            "172.31.", "192.168.", "169.254.", "fe80:", "fc00:", "fd00:", "ff00:"
+        ]
+        for range_prefix in RESERVED_IP_RANGES:
+            if ip_address.startswith(range_prefix):
+                return False
+        
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(ip_address)
+            if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_multicast:
+                return False
+        except ValueError:
+            pass
+        
+        domain = hostname.split(":")[0]
+        if not any(domain.endswith(allowed) or domain == allowed for allowed in ALLOWED_SSRF_DOMAINS):
+            return False
+        
+        return True
+    except Exception:
+        return False
 
 # Initialize Gemini if API key is available
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -92,14 +141,16 @@ class TribeService:
         print(f"[TRIBE] Gemini analysis for: {file_path}")
         
         try:
-            # Load and prepare image
+            image_data = None
+            
             if file_path.startswith('http'):
-                # Download from URL
+                if not is_url_safe(file_path):
+                    raise ValueError(f"URL not allowed for security reasons: {file_path}")
+                
                 response = requests.get(file_path, timeout=10)
                 response.raise_for_status()
                 image_data = response.content
             else:
-                # Read from local file
                 with open(file_path, 'rb') as f:
                     image_data = f.read()
             
