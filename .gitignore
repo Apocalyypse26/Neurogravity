@@ -17,5 +17,7 @@ keys.json
 logs.json
 auth_config.json
 project_info.json
+auth_logs.json
 
 .vercel
+supabase/.temp/
