@@ -6,4 +6,16 @@ dist
 *.log
 .DS_Store
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Temp files
+backend/temp/
+keys.json
+logs.json
+auth_config.json
+project_info.json
+
 .vercel
