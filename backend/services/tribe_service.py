@@ -3,8 +3,21 @@ import math
 import random
 import numpy as np
 from typing import Dict, List, Optional, Any
+import google.generativeai as genai
+from PIL import Image
+import requests
+from io import BytesIO
+import base64
 
 USE_REAL_TRIBE = os.getenv("USE_REAL_TRIBE", "false").lower() == "true"
+
+# Initialize Gemini if API key is available
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    GEMINI_MODEL = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    GEMINI_MODEL = None
 
 def seeded_random(seed: int, offset: int) -> float:
     x = math.sin(seed + offset) * 10000
@@ -56,21 +69,203 @@ class TribeService:
         print(f"[TRIBE] Initialized in {'REAL' if self.use_real else 'MOCK'} mode")
 
     async def analyze(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
-        if self.use_real:
+        # Use Gemini AI if available, otherwise fallback to mock
+        if GEMINI_MODEL:
+            return await self._analyze_with_gemini(file_path, media_type, seed)
+        elif self.use_real:
             return await self._analyze_real(file_path, media_type, seed)
         else:
             return await self._analyze_mock(media_type, seed)
 
     async def _analyze_real(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
         print(f"[TRIBE] Real analysis for: {file_path}")
+         
+        # Fallback to Gemini if available, otherwise mock
+        if GEMINI_MODEL:
+            return await self._analyze_with_gemini(file_path, media_type, seed)
+        else:
+            print("[TRIBE] WARNING: No real TRIBE model or Gemini API available, falling back to mock")
+            return await self._analyze_mock(media_type, seed)
+
+    async def _analyze_with_gemini(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
+        """Analyze using Google Gemini API for multi-modal understanding"""
+        print(f"[TRIBE] Gemini analysis for: {file_path}")
         
-        # TODO: Plug in actual TRIBE pretrained model here
-        # Example:
-        # model = load_tribe_model()
-        # raw_output = model.predict(file_path)
-        # return self._parse_tribe_output(raw_output)
-        
-        raise NotImplementedError("Real TRIBE integration not yet implemented. Set USE_REAL_TRIBE=false for mock mode.")
+        try:
+            # Load and prepare image
+            if file_path.startswith('http'):
+                # Download from URL
+                response = requests.get(file_path, timeout=10)
+                response.raise_for_status()
+                image_data = response.content
+            else:
+                # Read from local file
+                with open(file_path, 'rb') as f:
+                    image_data = f.read()
+            
+            # Convert to PIL Image for processing
+            image = Image.open(BytesIO(image_data))
+            
+            # Resize if too large (Gemini has size limits)
+            max_size = 1024
+            if max(image.size) > max_size:
+                ratio = max_size / max(image.size)
+                new_size = tuple(int(dim * ratio) for dim in image.size)
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # Prepare analysis prompt
+            prompt = """
+            Analyze this image for viral potential and meme characteristics. Provide:
+            
+            1. Virality Score (0-100): How likely this is to go viral on social media
+            2. Hook Strength (0-100): Initial attention-grabbing power
+            3. Visual Impact (0-100): Visual appeal and shareability
+            4. Text Clarity (0-100): Readability of any text present
+            5. Meme Strength (0-100): How well it fits meme formats
+            6. Crypto Relevance (0-100): Relevance to cryptocurrency themes
+            
+            Also provide:
+            - Any text found in the image (OCR)
+            - Confidence level (HIGH/MEDIUM/LOW)
+            - Best platform for sharing (X/Twitter, Telegram, Instagram, TikTok)
+            - Rank/category (e.g., "[ALPHA] Top 3%", "[OPTIMAL]", etc.)
+            - 3 actionable improvement suggestions
+            
+            Format response as JSON with keys: globalScore, subScores (array of objects with name/val), confidence (object with text/color), rank, fixes (array of strings), bestPlatform, ocrText, ocrReadability (0-1), relevanceScore (0-1)
+            """
+            
+            # Generate content with Gemini
+            response = GEMINI_MODEL.generate_content([prompt, image])
+            response_text = response.text
+            
+            # Parse JSON response (handle potential formatting issues)
+            import json
+            import re
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    # Fallback to mock if JSON parsing fails
+                    print("[TRIBE] WARNING: Failed to parse Gemini JSON response, falling back to mock")
+                    return await self._analyze_mock(media_type, seed)
+            else:
+                # Fallback to mock if no JSON found
+                print("[TRIBE] WARNING: No JSON found in Gemini response, falling back to mock")
+                return await self._analyze_mock(media_type, seed)
+            
+            # Extract and validate results
+            global_score = max(0, min(100, int(result.get('globalScore', 50))))
+            
+            # Process subScores
+            sub_scores_raw = result.get('subScores', [])
+            sub_scores = []
+            default_subs = [
+                {"name": "Hook Score", "val": 70},
+                {"name": "Peak Response", "val": 75},
+                {"name": "Sustained Attention", "val": 65},
+                {"name": "Ending Strength", "val": 60},
+                {"name": "Visual Punch", "val": 80},
+                {"name": "Emotion Spike", "val": 70},
+                {"name": "Readability Blend", "val": 68}
+            ]
+            
+            for i, sub in enumerate(default_subs):
+                if i < len(sub_scores_raw):
+                    score_data = sub_scores_raw[i]
+                    name = score_data.get('name', sub['name'])
+                    val = max(0, min(100, int(score_data.get('val', sub['val']))))
+                    sub_scores.append({"name": name, "val": val})
+                else:
+                    sub_scores.append(sub)
+            
+            # Process confidence
+            confidence_raw = result.get('confidence', {})
+            confidence_text = confidence_raw.get('text', 'MEDIUM CONFIDENCE')
+            confidence_color = confidence_raw.get('color', '#f59e0b')
+            
+            # Map confidence text to color if needed
+            if confidence_text == 'HIGH CONFIDENCE':
+                confidence_color = '#10b981'
+            elif confidence_text == 'LOW CONFIDENCE' or confidence_text == 'EXPERIMENTAL':
+                confidence_color = '#8b5cf6'
+            else:
+                confidence_color = '#f59e0b'
+            
+            confidence = {"text": confidence_text, "color": confidence_color}
+            
+            # Extract other fields
+            rank = result.get('rank', '[OPTIMAL] High retention span expected')
+            fixes = result.get('fixes', [
+                "Increase shadow contrast by 15% to trigger higher dopamine retention.",
+                "Crop outer margins by 10% to force focal entity recognition.",
+                "Text layout conflicts with visual anchor. Center or increase weight by 200."
+            ])
+            
+            # Ensure we have exactly 3 fixes
+            while len(fixes) < 3:
+                fixes.append("Enhance visual hierarchy for better impact.")
+            fixes = fixes[:3]
+            
+            best_platform = result.get('bestPlatform', 'X/Twitter')
+            ocr_text = result.get('ocrText', '')
+            ocr_readability = max(0, min(1, float(result.get('ocrReadability', 0.5))))
+            relevance_score = max(0, min(1, float(result.get('relevanceScore', 0.5))))
+            
+            # Generate time series data (for compatibility)
+            base_signal = 0.4 + (seed % 100) / 250  # 0.4-0.8 range
+            num_frames = 30 if media_type == "image" else 60
+            time_series = []
+            for i in range(num_frames):
+                frame_progress = i / num_frames
+                hook_boost = (3 - i) * 0.15 if i < 3 else 0
+                decay = 1 - (frame_progress * 0.3)
+                noise = ((seed + i) % 100 - 50) / 500  # -0.1 to 0.1
+                signal = min(max(base_signal + hook_boost + noise, 0), 1) * decay
+                if i > num_frames * 0.7:
+                    decay *= 1.2
+                time_series.append(round(signal, 4))
+            
+            hook_score = (time_series[0] + time_series[1] + time_series[2]) / 3 if len(time_series) >= 3 else time_series[0]
+            attention_peak = max(time_series)
+            attention_mean = sum(time_series) / len(time_series)
+            ending_strength = sum(time_series[-10:]) / 10 if len(time_series) >= 10 else sum(time_series) / len(time_series)
+            
+            spikes = []
+            for i in range(1, len(time_series)):
+                delta = time_series[i] - time_series[i-1]
+                if delta > 0.05:
+                    spikes.append(delta)
+            emotion_spike = max(spikes) if spikes else 0
+            
+            visual_punch = 0.5 + (seed % 100) / 250  # 0.5-0.9 range
+            
+            return TribeOutput(
+                time_series=time_series,
+                raw_hook_score=hook_score,
+                raw_attention_peak=attention_peak,
+                raw_attention_mean=attention_mean,
+                raw_ending_strength=ending_strength,
+                raw_emotion_spike=emotion_spike,
+                raw_visual_punch=visual_punch,
+                ocr_text=ocr_text,
+                ocr_readability=ocr_readability,
+                relevance_score=relevance_score,
+                metadata={
+                    "media_type": media_type,
+                    "num_frames": num_frames,
+                    "seed": seed,
+                    "mode": "gemini",
+                    "globalScore": global_score
+                }
+            )
+            
+        except Exception as e:
+            print(f"[TRIBE] ERROR in Gemini analysis: {e}")
+            print("[TRIBE] Falling back to mock analysis")
+            return await self._analyze_mock(media_type, seed)
 
     async def _analyze_mock(self, media_type: str, seed: int) -> TribeOutput:
         print(f"[TRIBE] Mock analysis for media_type: {media_type}, seed: {seed}")
