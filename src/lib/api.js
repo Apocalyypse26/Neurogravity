@@ -222,12 +222,19 @@ export function subscribeToJob(jobId, options = {}) {
   
   let url = `${API_BASE_URL}/api/jobs/${jobId}/stream`;
   let eventSource;
+  let retryCount = 0;
+  const maxRetries = 5;
   
   const headers = {};
   
   if (jobToken) {
     url += `?token=${encodeURIComponent(jobToken)}`;
   }
+  
+  const getBackoffDelay = (attempt) => {
+    const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+    return delay;
+  };
   
   const connect = async () => {
     const authToken = await getAuthToken();
@@ -271,9 +278,16 @@ export function subscribeToJob(jobId, options = {}) {
       console.error('SSE error:', error);
       eventSource.close();
       
-      setTimeout(() => {
-        connect();
-      }, 2000);
+      if (retryCount < maxRetries) {
+        retryCount++;
+        const delay = getBackoffDelay(retryCount);
+        console.log(`SSE reconnecting in ${delay}ms (attempt ${retryCount}/${maxRetries})`);
+        setTimeout(() => {
+          connect();
+        }, delay);
+      } else {
+        onError?.('Connection lost. Please refresh the page.');
+      }
     };
   };
   

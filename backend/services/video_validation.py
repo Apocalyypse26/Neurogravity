@@ -190,6 +190,11 @@ def validate_video_url(url: str, max_duration: int = MAX_VIDEO_DURATION_SEC) -> 
             errors.append("No video stream found")
         
         codec = video_stream.get("codec_name") if video_stream else None
+        if codec:
+            invalid_codecs = ["h263", "mpeg2video", "vc1", "wmv1", "wmv2", "wmv3"]
+            if codec.lower() in invalid_codecs:
+                errors.append(f"Codec '{codec}' is not supported. Use H.264 (libx264) or VP9.")
+        
         width = video_stream.get("width") if video_stream else None
         height = video_stream.get("height") if video_stream else None
         
