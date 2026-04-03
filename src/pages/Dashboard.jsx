@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Link, useNavigate } from 'react-router-dom'
 import { exportToJSON } from '../lib/utils'
-import { Folder, Plus, LogOut, Code, Shield, Zap, ChevronRight, FolderOpen, Clock, MoreVertical, Check, X, Download, Link as LinkIcon } from 'lucide-react'
+import { Folder, Plus, LogOut, Code, Shield, Zap, ChevronRight, FolderOpen, Clock, MoreVertical, Check, X, Download, Link as LinkIcon, Database } from 'lucide-react'
 
 const ProjectCard = ({ project, index, onExport }) => {
   const [hovered, setHovered] = useState(false)
@@ -108,18 +108,31 @@ export default function Dashboard({ session }) {
   const [isCreating, setIsCreating] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [paymentMessage, setPaymentMessage] = useState('')
+  const [credits, setCredits] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
     fetchProjects()
+    fetchCredits()
     setMounted(true)
     
     const urlParams = new URLSearchParams(window.location.search)
     if (urlParams.get('payment') === 'success') {
       setPaymentMessage('Payment successful! Your credits have been added.')
+      fetchCredits()
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
+
+  const fetchCredits = async () => {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('credits')
+      .eq('user_id', session.user.id)
+      .single()
+    
+    if (!error && data) setCredits(data.credits)
+  }
 
   const fetchProjects = async () => {
     const { data, error } = await supabase
@@ -193,6 +206,13 @@ export default function Dashboard({ session }) {
           </span>
         </div>
         <div className="header-right">
+          {credits !== null && (
+            <div className={`credit-badge ${credits <= 5 ? 'credit-low' : ''}`}>
+              <Database size={13} />
+              <span className="credit-count">{credits}</span>
+              <span className="credit-label">CREDITS</span>
+            </div>
+          )}
           <Link to="/admin" className="header-btn admin-btn">
             <Shield size={16} />
             Admin
@@ -310,12 +330,19 @@ export default function Dashboard({ session }) {
                 color="var(--color-primary)"
               />
               <StatCard 
-                icon={<Zap size={18} />}
-                value={projects.length * 3}
-                label="Avg Score"
-                color="var(--color-accent)"
+                icon={<Database size={18} />}
+                value={credits === null ? '—' : credits}
+                label="Scan Credits"
+                color={credits !== null && credits <= 5 ? 'var(--color-danger)' : 'var(--color-accent)'}
               />
             </div>
+
+            {credits !== null && credits <= 5 && (
+              <div className="credits-warning">
+                <Zap size={14} />
+                <span>Low credits! You have <strong>{credits}</strong> scan{credits !== 1 ? 's' : ''} remaining.</span>
+              </div>
+            )}
           </section>
         </div>
       </main>
@@ -434,6 +461,62 @@ export default function Dashboard({ session }) {
           gap: 8px;
           color: var(--color-text-muted);
           font-size: 0.9rem;
+        }
+
+        .credit-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 0.45rem 0.9rem;
+          background: rgba(0, 212, 170, 0.08);
+          border: 1px solid rgba(0, 212, 170, 0.25);
+          border-radius: 8px;
+          color: var(--color-accent);
+          font-family: var(--font-mono);
+          font-size: 0.78rem;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          transition: var(--transition);
+        }
+
+        .credit-badge.credit-low {
+          background: rgba(255, 59, 59, 0.1);
+          border-color: rgba(255, 59, 59, 0.4);
+          color: var(--color-danger);
+          animation: creditPulse 1.5s ease infinite;
+        }
+
+        @keyframes creditPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 59, 0); }
+          50% { box-shadow: 0 0 12px 2px rgba(255, 59, 59, 0.3); }
+        }
+
+        .credit-count {
+          font-size: 1rem;
+          font-weight: 800;
+        }
+
+        .credit-label {
+          opacity: 0.7;
+          font-size: 0.7rem;
+        }
+
+        .credits-warning {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 0.75rem 1rem;
+          background: rgba(255, 59, 59, 0.08);
+          border: 1px solid rgba(255, 59, 59, 0.25);
+          border-radius: 10px;
+          color: var(--color-danger);
+          font-size: 0.85rem;
+          margin-top: 0.75rem;
+          animation: slideDown 0.3s ease;
+        }
+
+        .credits-warning strong {
+          font-weight: 800;
         }
 
         .header-btn {
