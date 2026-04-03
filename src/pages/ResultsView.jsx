@@ -4,8 +4,9 @@ import { supabase } from '../lib/supabase'
 import { createAnalysisJob, getJobByUpload, checkApiHealth, subscribeToJob } from '../lib/api'
 import { exportToJSON, shareToTwitter, shareToTelegram, generateShareableImage } from '../lib/utils'
 import LazyImage from '../components/LazyImage'
+import BoltIcon from '../components/BoltIcon'
 import { 
-  ChevronLeft, Target, AlertTriangle, CheckCircle, Bolt, Eye, 
+  ChevronLeft, Target, AlertTriangle, CheckCircle, Eye, 
   Crosshair, Cpu, ThumbsUp, ThumbsDown, Send, Loader2, Share2,
   Download, Filter, Play, Pause, Volume2, Radio, BarChart3, Activity,
   Globe, MessageCircle, Image, ChevronDown, Copy, Check
@@ -465,7 +466,7 @@ export default function ResultsView({ session }) {
 
               <div className="rank-box">
                 <div className="rank-header">
-                  <Bolt size={16} />
+                  <BoltIcon size={16} />
                   System Ranking
                 </div>
                 <p className="rank-text">{rank}</p>

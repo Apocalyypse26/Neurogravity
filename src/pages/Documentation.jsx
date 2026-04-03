@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Book, Search, ChevronRight, Copy, ExternalLink, Bolt, Brain, Shield, Terminal, Code, Target, Rocket, Gauge, Plug, Map, HelpCircle, Link2, Users, Layers, CheckCircle, ArrowRight, Clock, Calendar } from 'lucide-react';
+import { Book, Search, ChevronRight, Copy, ExternalLink, Brain, Shield, Terminal, Code, Target, Rocket, Gauge, Plug, Map, HelpCircle, Link2, Users, Layers, CheckCircle, ArrowRight, Clock, Calendar } from 'lucide-react';
+import BoltIcon from '../components/BoltIcon';
 import '../../style.css';
 
 export default function Documentation() {
@@ -22,7 +23,7 @@ export default function Documentation() {
     { id: 'security', title: 'Security', icon: <Shield size={16} /> },
     { id: 'performance', title: 'Performance', icon: <Gauge size={16} /> },
     { id: 'integrations', title: 'Integrations', icon: <Plug size={16} /> },
-    { id: 'frontend', title: 'Frontend & Branding', icon: <Bolt size={16} /> },
+    { id: 'frontend', title: 'Frontend & Branding', icon: <BoltIcon size={16} /> },
     { id: 'roadmap', title: 'Roadmap', icon: <Map size={16} /> },
     { id: 'faq', title: 'FAQ', icon: <HelpCircle size={16} /> },
     { id: 'references', title: 'References', icon: <Link2 size={16} /> },
@@ -84,7 +85,7 @@ export default function Documentation() {
           </Link>
           <nav className="nav-links">
             <Link to="/" className="nav-link">
-              <Bolt size={14} /> Home
+              <BoltIcon size={14} /> Home
             </Link>
             <Link to="/docs" className="nav-link active">
               <Book size={14} /> Docs
@@ -173,7 +174,7 @@ export default function Documentation() {
         <main className="docs-content" ref={contentRef}>
           <div className="docs-hero">
             <div className="docs-hero-badge">
-              <Bolt size={14} />
+              <BoltIcon size={14} />
               Protocol Documentation
             </div>
             <h1 className="docs-hero-title">NEUROX Protocol</h1>
@@ -267,7 +268,7 @@ export default function Documentation() {
             <h3>Components</h3>
             <div className="doc-components-grid">
               <div className="doc-component-card">
-                <div className="doc-component-icon"><Bolt size={20} /></div>
+                <div className="doc-component-icon"><BoltIcon size={20} /></div>
                 <h4>Frontend</h4>
                 <p>Landing page & authenticated NEUROX Terminal for advanced users.</p>
               </div>
@@ -348,7 +349,7 @@ export default function Documentation() {
               </div>
               <div className="doc-persona-card">
                 <div className="doc-persona-header">
-                  <Bolt size={24} />
+                  <BoltIcon size={24} />
                   <h3>Power Users</h3>
                 </div>
                 <p>
@@ -732,7 +733,7 @@ export default function Documentation() {
           <section id="frontend" className="doc-section">
             <div className="doc-section-header">
               <h2>
-                <Bolt size={20} className="doc-section-icon" />
+                <BoltIcon size={20} className="doc-section-icon" />
                 Frontend and Branding
               </h2>
               <button className="doc-copy-link" onClick={() => copyLink('frontend')}>

@@ -9,8 +9,9 @@ import MediaCard from '../components/MediaCard'
 import { 
   ChevronLeft, Upload, AlertCircle, 
   Lock, CreditCard, FolderOpen, X, Check, Loader2, Grid, List,
-  RefreshCw, Bolt
+  RefreshCw
 } from 'lucide-react'
+import BoltIcon from '../components/BoltIcon'
 
 const getVideoDuration = (file) => {
   return new Promise((resolve) => {
@@ -364,7 +365,7 @@ export default function ProjectView({ session }) {
             <RefreshCw size={16} />
           </button>
           <div className={`stat-pill credits ${credits === 0 ? 'danger' : ''}`}>
-            <Bolt size={14} />
+            <BoltIcon size={14} />
             <span>SCANS:</span>
             {!creditsLoading ? (
               <strong>{credits !== null ? credits : '—'}</strong>
