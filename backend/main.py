@@ -46,6 +46,7 @@ from services import (
 from services.tribe_service import is_url_safe
 from services.stripe_service import stripe_service, CREDIT_PACKAGES, SUBSCRIPTION_PLANS
 from services.video_validation import validate_video_url, VideoValidationResult
+from services.retry import retry_with_backoff
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -489,18 +490,22 @@ async def analyze_sync(request: Request, req: AnalysisRequest):
 
     if req.media_type == "image":
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                res = await client.get(req.file_url)
-                if res.status_code == 200:
-                    img = Image.open(io.BytesIO(res.content)).convert("L")
-                    stat = sum(img.getdata()) / (img.size[0] * img.size[1])
-                    brightness_modifier = (stat - 128) / 10
-                elif res.status_code == 404:
-                    raise HTTPException(status_code=404, detail="File not found at provided URL")
-                else:
-                    raise HTTPException(status_code=502, detail="Failed to fetch media file")
+            async def _fetch_image():
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    res = await client.get(req.file_url)
+                    res.raise_for_status()
+                    return res.content
+            
+            image_content = await retry_with_backoff(_fetch_image)
+            img = Image.open(io.BytesIO(image_content)).convert("L")
+            stat = sum(img.getdata()) / (img.size[0] * img.size[1])
+            brightness_modifier = (stat - 128) / 10
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Media fetch timed out")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise HTTPException(status_code=404, detail="File not found at provided URL")
+            raise HTTPException(status_code=502, detail="Failed to fetch media file")
         except Exception as e:
             print(f"[ERROR] Failed to process image: {e}")
             raise HTTPException(status_code=422, detail="Failed to process media file")

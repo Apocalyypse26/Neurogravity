@@ -7,6 +7,8 @@ from typing import Dict, Optional, Any, Callable
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
+from .media_cache import media_cache
+from .retry import retry_with_backoff
 
 class JobStatus(Enum):
     PENDING = "pending"
@@ -106,57 +108,58 @@ class JobManager:
             return
         
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self._supabase_url}/rest/v1/jobs",
-                    headers=self._get_db_headers(),
-                    params={
-                        "status": "not.in.(completed,failed)",
-                        "select": "*"
-                    }
+            async def _fetch():
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(
+                        f"{self._supabase_url}/rest/v1/jobs",
+                        headers=self._get_db_headers(),
+                        params={
+                            "status": "not.in.(completed,failed)",
+                            "select": "*"
+                        }
+                    )
+                    response.raise_for_status()
+                    return response.json()
+            
+            db_jobs = await retry_with_backoff(_fetch, max_retries=3, base_delay=1.0)
+            
+            for db_job in db_jobs:
+                job = AnalysisJob(
+                    job_id=db_job["job_id"],
+                    upload_id=db_job["upload_id"],
+                    user_id=db_job["user_id"],
+                    media_type=db_job["media_type"],
+                    file_url=db_job["file_url"],
+                    status=JobStatus(db_job["status"]),
+                    progress=db_job["progress"],
+                    result=db_job.get("result"),
+                    error=db_job.get("error"),
+                    created_at=datetime.fromisoformat(db_job["created_at"].replace("Z", "+00:00")).timestamp(),
+                    updated_at=datetime.fromisoformat(db_job["updated_at"].replace("Z", "+00:00")).timestamp()
                 )
-                
-                if response.status_code == 200:
-                    db_jobs = response.json()
-                    for db_job in db_jobs:
-                        job = AnalysisJob(
-                            job_id=db_job["job_id"],
-                            upload_id=db_job["upload_id"],
-                            user_id=db_job["user_id"],
-                            media_type=db_job["media_type"],
-                            file_url=db_job["file_url"],
-                            status=JobStatus(db_job["status"]),
-                            progress=db_job["progress"],
-                            result=db_job.get("result"),
-                            error=db_job.get("error"),
-                            created_at=datetime.fromisoformat(db_job["created_at"].replace("Z", "+00:00")).timestamp(),
-                            updated_at=datetime.fromisoformat(db_job["updated_at"].replace("Z", "+00:00")).timestamp()
-                        )
-                        self.jobs[job.job_id] = job
-                    print(f"[JOB_MANAGER] Loaded {len(db_jobs)} active jobs from database")
-                else:
-                    print(f"[JOB_MANAGER] Failed to load jobs from DB: {response.status_code}")
+                self.jobs[job.job_id] = job
+            print(f"[JOB_MANAGER] Loaded {len(db_jobs)} active jobs from database")
         except Exception as e:
             print(f"[JOB_MANAGER] Error loading jobs from database: {e}")
 
     async def _persist_job(self, job: AnalysisJob, update_only: bool = False):
-        """Persist job to database"""
+        """Persist job to database with retry logic"""
         if not self._db_enabled:
             return
         
-        try:
-            job_data = {
-                "job_id": job.job_id,
-                "upload_id": job.upload_id,
-                "user_id": job.user_id,
-                "media_type": job.media_type,
-                "file_url": job.file_url,
-                "status": job.status.value,
-                "progress": job.progress,
-                "result": job.result,
-                "error": job.error
-            }
-            
+        job_data = {
+            "job_id": job.job_id,
+            "upload_id": job.upload_id,
+            "user_id": job.user_id,
+            "media_type": job.media_type,
+            "file_url": job.file_url,
+            "status": job.status.value,
+            "progress": job.progress,
+            "result": job.result,
+            "error": job.error
+        }
+        
+        async def _persist():
             async with httpx.AsyncClient(timeout=10.0) as client:
                 if update_only:
                     response = await client.patch(
@@ -171,11 +174,17 @@ class JobManager:
                         headers=self._get_db_headers(),
                         json=job_data
                     )
-                
                 if response.status_code not in (200, 201, 204):
-                    print(f"[JOB_MANAGER] Warning: Failed to persist job {job.job_id}: {response.status_code}")
+                    raise httpx.HTTPStatusError(
+                        f"Unexpected status {response.status_code}",
+                        request=response.request,
+                        response=response
+                    )
+        
+        try:
+            await retry_with_backoff(_persist, max_retries=2, base_delay=0.5)
         except Exception as e:
-            print(f"[JOB_MANAGER] Warning: Exception persisting job {job.job_id}: {e}")
+            print(f"[JOB_MANAGER] Warning: Failed to persist job {job.job_id} after retries: {e}")
 
     def _safe_persist_job(self, job: AnalysisJob, update_only: bool = False):
         """Safely create a background task for persisting job with error handling"""
@@ -196,20 +205,23 @@ class JobManager:
         if not self._db_enabled:
             return
         
-        try:
-            max_age_hours = self._max_job_age // 3600
+        max_age_hours = self._max_job_age // 3600
+        
+        async def _cleanup():
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{self._supabase_url}/rest/v1/rpc/cleanup_old_jobs",
                     headers=self._get_db_headers(),
                     json={"max_age_hours": max_age_hours}
                 )
-                
-                if response.status_code in (200, 201):
-                    result = response.json()
-                    print(f"[JOB_MANAGER] Cleaned up {result} old jobs from database")
+                response.raise_for_status()
+                return response.json()
+        
+        try:
+            result = await retry_with_backoff(_cleanup, max_retries=2, base_delay=1.0)
+            print(f"[JOB_MANAGER] Cleaned up {result} old jobs from database")
         except Exception as e:
-            print(f"[JOB_MANAGER] Warning: Exception cleaning up DB jobs: {e}")
+            print(f"[JOB_MANAGER] Warning: Exception cleaning up DB jobs after retries: {e}")
 
     def create_job(self, upload_id: str, user_id: str, media_type: str, file_url: str) -> str:
         job_id = str(uuid.uuid4())
@@ -257,13 +269,18 @@ class JobManager:
         print(f"[JOB_MANAGER] Starting job {job_id}")
         
         try:
+            # Download media once and cache for reuse across all steps
+            print(f"[JOB_MANAGER] Downloading and caching media: {job.file_url}")
+            media_data, media_path = await media_cache.get_or_download(job.file_url)
+            
             job.status = JobStatus.PREPROCESSING
             job.progress = 10
             job.updated_at = time.time()
             if self._db_enabled:
                 self._safe_persist_job(job, update_only=True)
             
-            preprocess_result = await preprocess_func(job.file_url, job.media_type)
+            # Pass cached media path to preprocessing function
+            preprocess_result = await preprocess_func(media_path, job.media_type)
             print(f"[JOB_MANAGER] Preprocessing done: {preprocess_result.to_dict()}")
             
             job.status = JobStatus.OCR_EXTRACTING
@@ -272,7 +289,8 @@ class JobManager:
             if self._db_enabled:
                 self._safe_persist_job(job, update_only=True)
             
-            ocr_result = await ocr_func(job.file_url, job.media_type)
+            # Pass cached media path to OCR function
+            ocr_result = await ocr_func(media_path, job.media_type)
             print(f"[JOB_MANAGER] OCR done: {ocr_result.to_dict()}")
             
             job.status = JobStatus.TRIBE_ANALYZING
@@ -282,7 +300,8 @@ class JobManager:
                 self._safe_persist_job(job, update_only=True)
             
             seed = sum(ord(c) for c in job.upload_id)
-            tribe_output = await tribe_func(job.file_url, job.media_type, seed)
+            # Pass cached media path and OCR results to tribe function
+            tribe_output = await tribe_func(media_path, job.media_type, seed, ocr_result.text)
             
             tribe_output.ocr_text = ocr_result.text
             tribe_output.ocr_readability = ocr_result.readability_score

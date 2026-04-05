@@ -6,6 +6,7 @@ from .job_manager import job_manager, JobManager, AnalysisJob, JobStatus
 from .auth_service import auth_service, AuthService
 from .admin_service import admin_service, AdminService
 from .video_validation import validate_video_url, validate_video_file, VideoValidationResult
+from .media_cache import media_cache, MediaCache
 
 __all__ = [
     "tribe_service",
@@ -31,5 +32,7 @@ __all__ = [
     "AdminService",
     "validate_video_url",
     "validate_video_file",
-    "VideoValidationResult"
+    "VideoValidationResult",
+    "media_cache",
+    "MediaCache"
 ]

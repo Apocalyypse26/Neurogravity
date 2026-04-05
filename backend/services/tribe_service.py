@@ -9,6 +9,9 @@ from PIL import Image
 from io import BytesIO
 import base64
 from urllib.parse import urlparse
+import logging
+import traceback
+from .retry import retry_with_backoff
 
 USE_REAL_TRIBE = os.getenv("USE_REAL_TRIBE", "false").lower() == "true"
 
@@ -120,26 +123,26 @@ class TribeService:
         self.use_real = USE_REAL_TRIBE
         print(f"[TRIBE] Initialized in {'REAL' if self.use_real else 'MOCK'} mode")
 
-    async def analyze(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
+    async def analyze(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
         # Use Gemini AI if available, otherwise fallback to mock
         if GEMINI_MODEL:
-            return await self._analyze_with_gemini(file_path, media_type, seed)
+            return await self._analyze_with_gemini(file_path, media_type, seed, ocr_text)
         elif self.use_real:
-            return await self._analyze_real(file_path, media_type, seed)
+            return await self._analyze_real(file_path, media_type, seed, ocr_text)
         else:
             return await self._analyze_mock(media_type, seed)
 
-    async def _analyze_real(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
+    async def _analyze_real(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
         print(f"[TRIBE] Real analysis for: {file_path}")
-         
+          
         # Fallback to Gemini if available, otherwise mock
         if GEMINI_MODEL:
-            return await self._analyze_with_gemini(file_path, media_type, seed)
+            return await self._analyze_with_gemini(file_path, media_type, seed, ocr_text)
         else:
             print("[TRIBE] WARNING: No real TRIBE model or Gemini API available, falling back to mock")
             return await self._analyze_mock(media_type, seed)
 
-    async def _analyze_with_gemini(self, file_path: str, media_type: str, seed: int) -> TribeOutput:
+    async def _analyze_with_gemini(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
         """Analyze using Google Gemini API for multi-modal understanding"""
         print(f"[TRIBE] Gemini analysis for: {file_path}")
         
@@ -150,9 +153,13 @@ class TribeService:
                 if not is_url_safe(file_path):
                     raise ValueError(f"URL not allowed for security reasons: {file_path}")
                 
-                response = httpx.get(file_path, timeout=10)
-                response.raise_for_status()
-                image_data = response.content
+                async def _download_image():
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(file_path, timeout=10.0)
+                        response.raise_for_status()
+                        return response.content
+                
+                image_data = await retry_with_backoff(_download_image)
             else:
                 with open(file_path, 'rb') as f:
                     image_data = f.read()
@@ -168,7 +175,7 @@ class TribeService:
                 image = image.resize(new_size, Image.Resampling.LANCZOS)
             
             # Prepare analysis prompt
-            prompt = """
+            prompt = f"""
             Analyze this image for viral potential and meme characteristics. Provide:
             
             1. Virality Score (0-100): How likely this is to go viral on social media
@@ -186,6 +193,8 @@ class TribeService:
             - 3 actionable improvement suggestions
             
             Format response as JSON with keys: globalScore, subScores (array of objects with name/val), confidence (object with text/color), rank, fixes (array of strings), bestPlatform, ocrText, ocrReadability (0-1), relevanceScore (0-1)
+            
+            IMPORTANT: Use the following OCR text as reference for text analysis: "{ocr_text}"
             """
             
             # Generate content with Gemini
