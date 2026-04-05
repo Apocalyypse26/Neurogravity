@@ -6,6 +6,11 @@ dist
 *.log
 .DS_Store
 
+# Secrets - NEVER commit
+keys.json
+*.key
+*.pem
+
 # Python
 __pycache__/
 *.pyc
@@ -13,7 +18,6 @@ __pycache__/
 
 # Temp files
 backend/temp/
-keys.json
 logs.json
 auth_config.json
 project_info.json

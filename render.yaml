@@ -17,7 +17,7 @@ services:
         value: false
       - key: CORS_ORIGINS
         # Update this with your Vercel frontend URL after deployment
-        value: https://neurogravity.vercel.app,https://*.vercel.app
+        value: https://neurogravity.vercel.app
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: STRIPE_SECRET_KEY

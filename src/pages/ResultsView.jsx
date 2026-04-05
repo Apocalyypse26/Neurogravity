@@ -150,24 +150,8 @@ export default function ResultsView({ session }) {
       const apiHealth = await checkApiHealth();
       
       if (!apiHealth) {
-        console.warn("[ANALYSIS] Backend unavailable, falling back to mock analysis");
-        await new Promise(res => setTimeout(res, 2000));
-        setAnalysisData({
-          globalScore: 75 + Math.floor(Math.random() * 25),
-          confidence: { text: "MOCK MODE", color: "#8b5cf6" },
-          rank: "[MOCK] Test ranking",
-          subScores: [
-            { name: "Hook Score", val: 78 },
-            { name: "Peak Response", val: 82 },
-            { name: "Sustained Attention", val: 71 },
-            { name: "Ending Strength", val: 68 },
-            { name: "Visual Punch", val: 85 },
-            { name: "Emotion Spike", val: 76 },
-            { name: "Readability Blend", val: 72 }
-          ],
-          fixes: ["Mock fix 1", "Mock fix 2", "Mock fix 3"],
-          bestPlatform: "X/Twitter"
-        });
+        console.error("[ANALYSIS] Backend unavailable");
+        setServerError("NEUROX backend is currently unavailable. Please try again in a few moments.");
         setLoading(false);
         return;
       }

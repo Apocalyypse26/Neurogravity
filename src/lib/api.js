@@ -221,15 +221,10 @@ export function subscribeToJob(jobId, options = {}) {
   } = options;
   
   let url = `${API_BASE_URL}/api/jobs/${jobId}/stream`;
-  const params = [];
-  
-  if (jobToken) {
-    params.push(`token=${encodeURIComponent(jobToken)}`);
-  }
-  
   let eventSource;
   let retryCount = 0;
   const maxRetries = 5;
+  let abortController = null;
   
   const getBackoffDelay = (attempt) => {
     const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
@@ -237,47 +232,74 @@ export function subscribeToJob(jobId, options = {}) {
   };
   
   const connect = async () => {
+    abortController = new AbortController();
     const authToken = await getAuthToken();
-    if (authToken && !jobToken) {
-      params.push(`auth=${encodeURIComponent(authToken)}`);
-    }
     
-    const fullUrl = params.length > 0 ? `${url}?${params.join('&')}` : url;
-    eventSource = new EventSource(fullUrl);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.error) {
-          onError?.(data.error);
-          eventSource.close();
-          return;
-        }
-        
-        if (data.type === 'done') {
-          eventSource.close();
-          return;
-        }
-        
-        onStatusUpdate?.(data);
-        onProgress?.(data.progress, data.status);
-        
-        if (data.status === 'completed') {
-          onComplete?.(data.result);
-          eventSource.close();
-        } else if (data.status === 'failed') {
-          onError?.(data.error || 'Analysis failed');
-          eventSource.close();
-        }
-      } catch (e) {
-        console.error('SSE parse error:', e);
+    try {
+      const headers = {};
+      if (jobToken) {
+        url += `?token=${encodeURIComponent(jobToken)}`;
+      } else if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
       }
-    };
-    
-    eventSource.onerror = (error) => {
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: abortController.signal
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.error) {
+              onError?.(data.error);
+              return;
+            }
+            
+            if (data.type === 'done') {
+              return;
+            }
+            
+            onStatusUpdate?.(data);
+            onProgress?.(data.progress, data.status);
+            
+            if (data.status === 'completed') {
+              onComplete?.(data.result);
+              return;
+            } else if (data.status === 'failed') {
+              onError?.(data.error || 'Analysis failed');
+              return;
+            }
+          } catch (e) {
+            console.error('SSE parse error:', e);
+          }
+        }
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      
       console.error('SSE error:', error);
-      eventSource.close();
       
       if (retryCount < maxRetries) {
         retryCount++;
@@ -289,15 +311,16 @@ export function subscribeToJob(jobId, options = {}) {
       } else {
         onError?.('Connection lost. Please refresh the page.');
       }
-    };
+    }
   };
   
   connect();
   
   return {
     close: () => {
-      if (eventSource) {
-        eventSource.close();
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
       }
     }
   };

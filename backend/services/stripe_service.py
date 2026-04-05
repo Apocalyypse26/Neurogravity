@@ -245,12 +245,6 @@ class StripeService:
 
         return {"event": event["type"]}
 
-    def handle_webhook(self, payload: bytes, sig_header: str) -> Dict[str, Any]:
-        """Sync wrapper for backward compatibility - prefer handle_webhook_async"""
-        return asyncio.get_event_loop().run_until_complete(
-            self.handle_webhook_async(payload, sig_header)
-        )
-
     def get_session(self, session_id: str) -> Dict[str, Any]:
         if not self.enabled:
             raise ValueError("Stripe is not configured")

@@ -15,7 +15,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
@@ -70,6 +69,12 @@ async def lifespan(app: FastAPI):
     print(f"[STARTUP] NEUROX Backend v2.0 starting...")
     print(f"[STARTUP] TRIBE mode: {'REAL' if USE_REAL_TRIBE else 'MOCK'}")
     print(f"[STARTUP] Rate limiting enabled")
+    
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+    if not jwt_secret or jwt_secret == "YOUR_JWT_SECRET_HERE":
+        print("[STARTUP] WARNING: SUPABASE_JWT_SECRET is not configured! Authentication will fail.")
+        print("[STARTUP] Set your Supabase JWT secret from: Project Settings -> API -> JWT Secret")
+    
     job_manager.start()
     yield
     print("[SHUTDOWN] Cleaning up...")
@@ -336,7 +341,7 @@ async def create_analysis_job(request: Request, req: CreateJobRequest):
     
     job_id = job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
     
-    asyncio.create_task(
+    task = asyncio.create_task(
         job_manager.run_job(
             job_id,
             preprocess_service.process_media,
@@ -344,6 +349,10 @@ async def create_analysis_job(request: Request, req: CreateJobRequest):
             tribe_service.analyze,
             score_mapper.map
         )
+    )
+    task.add_done_callback(
+        lambda t: print(f"[JOB_MANAGER] Background task {job_id} failed: {t.exception()}")
+        if t.exception() else None
     )
     
     return {
@@ -366,7 +375,7 @@ async def get_job_status(request: Request, job_id: str):
 async def stream_job_status(request: Request, job_id: str, token: str = None):
     """
     SSE endpoint for real-time job status updates.
-    Requires authentication via token or job_token for reconnects.
+    Requires authentication via Authorization header or short-lived job_token.
     """
     user_id = None
     
@@ -374,8 +383,6 @@ async def stream_job_status(request: Request, job_id: str, token: str = None):
         job_token = auth_service.verify_job_token(token)
         if job_token and job_token.get("job_id") == job_id:
             user_id = job_token.get("user_id")
-        else:
-            user_id = auth_service.get_user_id_from_token(f"Bearer {token}")
     
     if not user_id:
         auth_header = request.headers.get("authorization", "")
@@ -628,6 +635,12 @@ async def get_packages(request: Request):
 @app.post("/api/checkout")
 @user_limiter.limit("5/minute")
 async def create_checkout(request: Request, req: CheckoutRequest):
+    auth_header = request.headers.get("authorization", "")
+    auth_user_id = auth_service.get_user_id_from_token(auth_header)
+    
+    if auth_user_id and auth_user_id != req.user_id:
+        raise HTTPException(status_code=403, detail="User ID mismatch. Please use your authenticated user ID.")
+    
     try:
         if req.package_id in CREDIT_PACKAGES:
             result = stripe_service.create_checkout_session(
@@ -673,7 +686,7 @@ async def get_checkout_status(request: Request, session_id: str):
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     try:
         payload = await request.body()
-        result = stripe_service.handle_webhook(payload, stripe_signature)
+        result = await stripe_service.handle_webhook_async(payload, stripe_signature)
         print(f"[WEBHOOK] Processed: {result}")
         return {"received": True, "result": result}
     except ValueError as e:
@@ -825,4 +838,4 @@ async def get_admin_upload(request: Request, upload_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, timeout_graceful_shutdown=30)
