@@ -6,7 +6,7 @@ services:
   - type: web
     name: neurox-api
     region: oregon
-    repo: https://github.com/Apocalyypse26/Neurogravity.git
+    repo: https://github.com/Apocalyypse26/NEUROX.git
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -15,8 +15,9 @@ services:
     envVars:
       - key: USE_REAL_TRIBE
         value: false
+      - key: ENVIRONMENT
+        value: production
       - key: CORS_ORIGINS
-        # Update this with your Vercel frontend URL after deployment
         value: https://neurogravity.vercel.app
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -24,6 +25,18 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: JOB_CLEANUP_INTERVAL_SECONDS
+        value: 300
+      - key: MAX_JOB_AGE_SECONDS
+        value: 3600
 
 # Uncomment below to deploy frontend as static site on Render
 # For production, Vercel is recommended for frontend
