@@ -5,7 +5,8 @@ import numpy as np
 import httpx
 import asyncio
 from typing import Dict, List, Optional, Any
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 from io import BytesIO
 import base64
@@ -13,6 +14,8 @@ from urllib.parse import urlparse
 import logging
 import traceback
 from .retry import retry_with_backoff
+
+logger = logging.getLogger("neurox.tribe")
 
 USE_REAL_TRIBE = os.getenv("USE_REAL_TRIBE", "false").lower() == "true"
 
@@ -70,10 +73,9 @@ def is_url_safe(url: str) -> bool:
 # Initialize Gemini if API key is available
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    GEMINI_MODEL = genai.GenerativeModel('gemini-2.0-flash')
+    GEMINI_CLIENT = genai.Client(api_key=GEMINI_API_KEY)
 else:
-    GEMINI_MODEL = None
+    GEMINI_CLIENT = None
 
 def seeded_random(seed: int, offset: int) -> float:
     x = math.sin(seed + offset) * 10000
@@ -122,11 +124,10 @@ class TribeOutput:
 class TribeService:
     def __init__(self):
         self.use_real = USE_REAL_TRIBE
-        print(f"[TRIBE] Initialized in {'REAL' if self.use_real else 'MOCK'} mode")
+        logger.info("Initialized in %s mode", 'REAL' if self.use_real else 'MOCK')
 
     async def analyze(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
-        # Use Gemini AI if available, otherwise fallback to mock
-        if GEMINI_MODEL:
+        if GEMINI_CLIENT:
             return await self._analyze_with_gemini(file_path, media_type, seed, ocr_text)
         elif self.use_real:
             return await self._analyze_real(file_path, media_type, seed, ocr_text)
@@ -134,25 +135,21 @@ class TribeService:
             return await self._analyze_mock(media_type, seed)
 
     async def _analyze_real(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
-        print(f"[TRIBE] Real analysis for: {file_path}")
-          
-        # Fallback to Gemini if available, otherwise mock
-        if GEMINI_MODEL:
+        if GEMINI_CLIENT:
             return await self._analyze_with_gemini(file_path, media_type, seed, ocr_text)
         else:
-            print("[TRIBE] WARNING: No real TRIBE model or Gemini API available, falling back to mock")
+            logger.warning("No Gemini API available, falling back to mock")
             return await self._analyze_mock(media_type, seed)
 
     async def _analyze_with_gemini(self, file_path: str, media_type: str, seed: int, ocr_text: str = "") -> TribeOutput:
-        """Analyze using Google Gemini API for multi-modal understanding"""
-        print(f"[TRIBE] Gemini analysis for: {file_path}")
+        logger.info("Gemini analysis for: %s", file_path)
         
         try:
             image_data = None
             
             if file_path.startswith('http'):
                 if not is_url_safe(file_path):
-                    raise ValueError(f"URL not allowed for security reasons: {file_path}")
+                    raise ValueError(f"URL not allowed: {file_path}")
                 
                 async def _download_image():
                     async with httpx.AsyncClient() as client:
@@ -165,17 +162,17 @@ class TribeService:
                 with open(file_path, 'rb') as f:
                     image_data = f.read()
             
-            # Convert to PIL Image for processing
             image = Image.open(BytesIO(image_data))
             
-            # Resize if too large (Gemini has size limits)
             max_size = 1024
             if max(image.size) > max_size:
                 ratio = max_size / max(image.size)
                 new_size = tuple(int(dim * ratio) for dim in image.size)
                 image = image.resize(new_size, Image.Resampling.LANCZOS)
             
-            # Prepare analysis prompt
+            buffered = BytesIO()
+            image.save(buffered, format="JPEG")
+            
             prompt = f"""
             Analyze this image for viral potential and meme characteristics. Provide:
             
@@ -198,32 +195,32 @@ class TribeService:
             IMPORTANT: Use the following OCR text as reference for text analysis: "{ocr_text}"
             """
             
-            # Generate content with Gemini - run in thread to avoid blocking event loop
-            response = await asyncio.to_thread(GEMINI_MODEL.generate_content, [prompt, image])
+            response = await asyncio.to_thread(
+                GEMINI_CLIENT.models.generate_content,
+                model="gemini-2.0-flash",
+                contents=[
+                    prompt,
+                    types.Part.from_bytes(data=buffered.getvalue(), mime_type="image/jpeg")
+                ]
+            )
             response_text = response.text
             
-            # Parse JSON response (handle potential formatting issues)
             import json
             import re
             
-            # Extract JSON from response
             json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if json_match:
                 try:
                     result = json.loads(json_match.group())
                 except json.JSONDecodeError:
-                    # Fallback to mock if JSON parsing fails
-                    print("[TRIBE] WARNING: Failed to parse Gemini JSON response, falling back to mock")
+                    logger.warning("Failed to parse Gemini JSON response, falling back to mock")
                     return await self._analyze_mock(media_type, seed)
             else:
-                # Fallback to mock if no JSON found
-                print("[TRIBE] WARNING: No JSON found in Gemini response, falling back to mock")
+                logger.warning("No JSON found in Gemini response, falling back to mock")
                 return await self._analyze_mock(media_type, seed)
             
-            # Extract and validate results
             global_score = max(0, min(100, int(result.get('globalScore', 50))))
             
-            # Process subScores
             sub_scores_raw = result.get('subScores', [])
             sub_scores = []
             default_subs = [
@@ -245,12 +242,10 @@ class TribeService:
                 else:
                     sub_scores.append(sub)
             
-            # Process confidence
             confidence_raw = result.get('confidence', {})
             confidence_text = confidence_raw.get('text', 'MEDIUM CONFIDENCE')
             confidence_color = confidence_raw.get('color', '#f59e0b')
             
-            # Map confidence text to color if needed
             if confidence_text == 'HIGH CONFIDENCE':
                 confidence_color = '#10b981'
             elif confidence_text == 'LOW CONFIDENCE' or confidence_text == 'EXPERIMENTAL':
@@ -260,7 +255,6 @@ class TribeService:
             
             confidence = {"text": confidence_text, "color": confidence_color}
             
-            # Extract other fields
             rank = result.get('rank', '[OPTIMAL] High retention span expected')
             fixes = result.get('fixes', [
                 "Increase shadow contrast by 15% to trigger higher dopamine retention.",
@@ -268,25 +262,23 @@ class TribeService:
                 "Text layout conflicts with visual anchor. Center or increase weight by 200."
             ])
             
-            # Ensure we have exactly 3 fixes
             while len(fixes) < 3:
                 fixes.append("Enhance visual hierarchy for better impact.")
             fixes = fixes[:3]
             
             best_platform = result.get('bestPlatform', 'X/Twitter')
-            ocr_text = result.get('ocrText', '')
+            ocr_text_result = result.get('ocrText', '')
             ocr_readability = max(0, min(1, float(result.get('ocrReadability', 0.5))))
             relevance_score = max(0, min(1, float(result.get('relevanceScore', 0.5))))
             
-            # Generate time series data (for compatibility)
-            base_signal = 0.4 + (seed % 100) / 250  # 0.4-0.8 range
+            base_signal = 0.4 + (seed % 100) / 250
             num_frames = 30 if media_type == "image" else 60
             time_series = []
             for i in range(num_frames):
                 frame_progress = i / num_frames
                 hook_boost = (3 - i) * 0.15 if i < 3 else 0
                 decay = 1 - (frame_progress * 0.3)
-                noise = ((seed + i) % 100 - 50) / 500  # -0.1 to 0.1
+                noise = ((seed + i) % 100 - 50) / 500
                 signal = min(max(base_signal + hook_boost + noise, 0), 1) * decay
                 if i > num_frames * 0.7:
                     decay *= 1.2
@@ -304,7 +296,7 @@ class TribeService:
                     spikes.append(delta)
             emotion_spike = max(spikes) if spikes else 0
             
-            visual_punch = 0.5 + (seed % 100) / 250  # 0.5-0.9 range
+            visual_punch = 0.5 + (seed % 100) / 250
             
             return TribeOutput(
                 time_series=time_series,
@@ -314,7 +306,7 @@ class TribeService:
                 raw_ending_strength=ending_strength,
                 raw_emotion_spike=emotion_spike,
                 raw_visual_punch=visual_punch,
-                ocr_text=ocr_text,
+                ocr_text=ocr_text_result,
                 ocr_readability=ocr_readability,
                 relevance_score=relevance_score,
                 metadata={
@@ -327,8 +319,7 @@ class TribeService:
             )
             
         except Exception as e:
-            print(f"[TRIBE] ERROR in Gemini analysis: {e}")
-            print("[TRIBE] Falling back to mock analysis")
+            logger.error("Error in Gemini analysis: %s", e)
             return await self._analyze_mock(media_type, seed)
 
     async def _analyze_mock(self, media_type: str, seed: int) -> TribeOutput:
