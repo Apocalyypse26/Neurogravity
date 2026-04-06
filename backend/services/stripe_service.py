@@ -79,16 +79,43 @@ def _get_or_create_price(plan_id: str, price_cents: int, product_name: str) -> s
         if plan_id in _cached_prices:
             return _cached_prices[plan_id]
         
-        product = stripe.Product.create(
-            name=f"NEUROX {product_name}",
+        # Look up existing product first to avoid duplicates on restart
+        existing_products = stripe.Product.list(
             active=True,
+            limit=100
         )
         
+        product_id = None
+        for product in existing_products.auto_paging_iter():
+            if product.name == f"NEUROX {product_name}":
+                product_id = product.id
+                break
+        
+        if not product_id:
+            product = stripe.Product.create(
+                name=f"NEUROX {product_name}",
+                active=True,
+            )
+            product_id = product.id
+        
+        # Look up existing price
+        existing_prices = stripe.Price.list(
+            product=product_id,
+            active=True,
+            limit=100
+        )
+        
+        for price in existing_prices.auto_paging_iter():
+            if price.unit_amount == price_cents:
+                _cached_prices[plan_id] = price.id
+                return price.id
+        
+        # Create new price
         price = stripe.Price.create(
             currency="usd",
             unit_amount=price_cents,
             recurring={"interval": "month"},
-            product=product.id,
+            product=product_id,
         )
         
         _cached_prices[plan_id] = price.id

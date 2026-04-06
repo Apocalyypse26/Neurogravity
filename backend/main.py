@@ -8,6 +8,24 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from contextlib import asynccontextmanager
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("neurox")
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("neurox")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -79,18 +97,18 @@ user_limiter = Limiter(key_func=get_user_based_key)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"[STARTUP] NEUROX Backend v2.0 starting...")
-    print(f"[STARTUP] TRIBE mode: {'REAL' if USE_REAL_TRIBE else 'MOCK'}")
-    print(f"[STARTUP] Rate limiting enabled")
+    logger.info("NEUROX Backend v2.0 starting...")
+    logger.info("TRIBE mode: %s", 'REAL' if USE_REAL_TRIBE else 'MOCK')
+    logger.info("Rate limiting enabled")
     
     jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
     if not jwt_secret or jwt_secret == "YOUR_JWT_SECRET_HERE":
-        print("[STARTUP] WARNING: SUPABASE_JWT_SECRET is not configured! Authentication will fail.")
-        print("[STARTUP] Set your Supabase JWT secret from: Project Settings -> API -> JWT Secret")
+        logger.warning("SUPABASE_JWT_SECRET is not configured! Authentication will fail.")
+        logger.warning("Set your Supabase JWT secret from: Project Settings -> API -> JWT Secret")
     
     await job_manager.start()
     yield
-    print("[SHUTDOWN] Cleaning up...")
+    logger.info("Shutting down...")
     job_manager.stop_cleanup_scheduler()
     job_manager.cleanup_old_jobs(0)
 
@@ -258,11 +276,35 @@ def seeded_random(seed, offset):
 
 @app.get("/api/health")
 async def health_check():
+    status = "operational"
+    checks = {}
+    
+    try:
+        supabase_url = os.getenv("SUPABASE_URL", "")
+        if supabase_url:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{supabase_url}/rest/v1/")
+                checks["supabase"] = "ok" if resp.status_code < 500 else f"error: {resp.status_code}"
+        else:
+            checks["supabase"] = "not_configured"
+    except Exception as e:
+        checks["supabase"] = f"error: {str(e)}"
+        status = "degraded"
+    
+    try:
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        checks["gemini"] = "configured" if gemini_key else "not_configured"
+    except Exception:
+        checks["gemini"] = "unknown"
+    
+    active_jobs = len([j for j in job_manager.jobs.values() if j.status not in [JobStatus.COMPLETED, JobStatus.FAILED]])
+    
     return {
-        "status": "operational",
+        "status": status,
         "version": "2.0.0",
         "tribe_mode": "REAL" if USE_REAL_TRIBE else "MOCK",
-        "jobs_active": len([j for j in job_manager.jobs.values() if j.status not in [JobStatus.COMPLETED, JobStatus.FAILED]])
+        "jobs_active": active_jobs,
+        "checks": checks
     }
 
 @app.post("/api/validate-upload")
@@ -775,9 +817,9 @@ async def verify_admin_status(request: Request):
 
 @app.get("/api/admin/uploads")
 @user_limiter.limit("30/minute")
-async def get_admin_uploads(request: Request):
+async def get_admin_uploads(request: Request, page: int = 1, limit: int = 50):
     """
-    Get all uploads for admin dashboard.
+    Get all uploads for admin dashboard with pagination.
     Requires admin privileges.
     """
     try:
@@ -786,17 +828,31 @@ async def get_admin_uploads(request: Request):
         if not await admin_service.verify_admin(user["user_id"]):
             raise HTTPException(status_code=403, detail="Admin access required")
         
+        # Validate pagination params
+        page = max(1, page)
+        limit = min(max(1, limit), 200)  # Cap at 200 per page
+        
         # Get all uploads
         uploads = await admin_service.get_all_uploads()
         
+        # Apply pagination
+        total = len(uploads)
+        start = (page - 1) * limit
+        end = start + limit
+        paginated_uploads = uploads[start:end]
+        
         return {
-            "uploads": uploads,
-            "count": len(uploads)
+            "uploads": paginated_uploads,
+            "count": len(paginated_uploads),
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": max(1, (total + limit - 1) // limit)
         }
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ADMIN UPLOADS ERROR] {e}")
+        logger.error("Admin uploads error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to fetch uploads")
 
 
@@ -813,8 +869,18 @@ async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
         if not await admin_service.verify_admin(user["user_id"]):
             raise HTTPException(status_code=403, detail="Admin access required")
         
+        # Sanitize feedback to prevent stored XSS
+        sanitized_feedback = (
+            req.feedback
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#x27;")
+        )
+        
         # Update feedback
-        success = await admin_service.update_upload_feedback(req.upload_id, req.feedback)
+        success = await admin_service.update_upload_feedback(req.upload_id, sanitized_feedback)
         
         if success:
             return {"success": True, "message": "Feedback submitted successfully"}
@@ -824,7 +890,7 @@ async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ADMIN FEEDBACK ERROR] {e}")
+        logger.error("Admin feedback error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
 
