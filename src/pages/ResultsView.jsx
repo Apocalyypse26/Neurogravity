@@ -262,61 +262,6 @@ export default function ResultsView({ session }) {
       setLoading(false);
     }
   }
-        
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const tokenRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/jobs/${jobId}/token`, {
-              headers: { 'Authorization': `Bearer ${session.access_token}` }
-            });
-            if (tokenRes.ok) {
-              const tokenData = await tokenRes.json();
-              jobToken = tokenData.token;
-            }
-          }
-        } catch (e) {
-          // Could not get job token for resume
-        }
-      } else {
-        setAnalysisStatus('creating');
-        const job = await createAnalysisJob(targetData.id, targetData.media_type, targetData.file_url);
-        jobId = job.job_id;
-        jobToken = job.job_token;
-        setAnalysisStatus('polling');
-        logger.debug("[ANALYSIS] Created new job:", jobId);
-      }
-
-      const sseSubscription = subscribeToJob(jobId, {
-        jobToken: jobToken,
-        onStatusUpdate: (job) => {
-          logger.debug(`[ANALYSIS] Job progress: ${job.progress}% - ${job.status}`);
-          setAnalysisStatus(job.status);
-          setJobProgress(job.progress);
-        },
-        onComplete: async (result) => {
-          logger.debug("[ANALYSIS] Analysis complete:", result);
-          setAnalysisData(result);
-          setAnalysisStatus('complete');
-          
-          await supabase.from('uploads').update({ score_data: result }).eq('id', targetData.id);
-          setLoading(false);
-        },
-        onError: (error) => {
-          logger.error("[ANALYSIS] Error:", error);
-          setServerError(error || "Analysis failed. Please try again.");
-          setLoading(false);
-        }
-      });
-
-      sseRef.current = sseSubscription;
-
-    } catch (err) {
-      logger.error("[ANALYSIS] Error:", err);
-      setServerError(err.message || JSON.stringify(err) || "Analysis failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const submitFeedback = async () => {
     if (!feedbackSentiment) return
