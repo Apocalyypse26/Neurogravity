@@ -139,7 +139,20 @@ export default function ResultsView({ session }) {
       
       if (!apiHealth) {
         const apiUrl = import.meta.env.VITE_API_URL || 'not set';
+        console.error('[ANALYSIS] Health check failed. Full URL:', apiUrl + '/api/health');
         logger.error("[ANALYSIS] Backend unavailable - API URL:", apiUrl);
+        
+        // Try direct fetch as fallback
+        try {
+          const testResponse = await fetch(apiUrl + '/api/health', { 
+            method: 'GET',
+            mode: 'cors'
+          });
+          console.log('[ANALYSIS] Direct fetch test status:', testResponse.status);
+        } catch (testErr) {
+          console.error('[ANALYSIS] Direct fetch test error:', testErr.message);
+        }
+        
         setServerError(`Backend unavailable. API URL: ${apiUrl}. Please try again in a few moments.`);
         setLoading(false);
         return;
