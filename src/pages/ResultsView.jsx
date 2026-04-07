@@ -133,40 +133,17 @@ export default function ResultsView({ session }) {
 
   const executeAnalysisHook = async (targetData) => {
     try {
-      console.log('[ANALYSIS] Starting health check, API URL:', import.meta.env.VITE_API_URL);
-      const apiHealth = await checkApiHealth();
-      console.log('[ANALYSIS] Health check result:', apiHealth);
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      console.log('[ANALYSIS] Starting analysis, API URL:', apiUrl);
       
-      if (!apiHealth) {
-        const apiUrl = import.meta.env.VITE_API_URL || 'not set';
-        console.error('[ANALYSIS] Health check failed. Full URL:', apiUrl + '/api/health');
-        logger.error("[ANALYSIS] Backend unavailable - API URL:", apiUrl);
-        
-        // Try direct fetch as fallback
-        try {
-          const testResponse = await fetch(apiUrl + '/api/health', { 
-            method: 'GET',
-            mode: 'cors'
-          });
-          console.log('[ANALYSIS] Direct fetch test status:', testResponse.status);
-        } catch (testErr) {
-          console.error('[ANALYSIS] Direct fetch test error:', testErr.message);
-        }
-        
-        setServerError(`Backend unavailable. API URL: ${apiUrl}. Please try again in a few moments.`);
-        setLoading(false);
-        return;
-      }
-
-      logger.debug("[ANALYSIS] Starting TRIBE analysis pipeline...");
       setAnalysisStatus('preparing');
-
+      
       const existingJob = await getJobByUpload(targetData.id);
       let jobId;
       let jobToken = null;
 
       if (existingJob && existingJob.status === 'completed') {
-        logger.debug("[ANALYSIS] Using cached result");
+        console.log('[ANALYSIS] Using cached result');
         const result = existingJob.result;
         setAnalysisData(result);
         setAnalysisStatus('complete');
@@ -179,6 +156,112 @@ export default function ResultsView({ session }) {
       if (existingJob && existingJob.status !== 'failed') {
         jobId = existingJob.job_id;
         setAnalysisStatus('polling');
+        
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const tokenRes = await fetch(`${apiUrl}/api/jobs/${jobId}/token`, {
+              headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
+            if (tokenRes.ok) {
+              const tokenData = await tokenRes.json();
+              jobToken = tokenData.token;
+            }
+          }
+        } catch (e) {
+          // Could not get job token for resume
+        }
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        try {
+          const createRes = await fetch(`${apiUrl}/api/jobs/create`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+            },
+            body: JSON.stringify({
+              upload_id: targetData.id,
+              media_type: targetData.media_type,
+              file_url: targetData.file_url
+            })
+          });
+          
+          if (createRes.ok) {
+            const jobData = await createRes.json();
+            jobId = jobData.job_id;
+            jobToken = jobData.job_token;
+            setAnalysisStatus('processing');
+          } else {
+            console.error('[ANALYSIS] Failed to create job:', createRes.status);
+            // Fall back to direct analysis
+            jobId = null;
+          }
+        } catch (e) {
+          console.error('[ANALYSIS] Error creating job:', e);
+          jobId = null;
+        }
+      }
+
+      if (jobId && jobToken) {
+        sseRef.current = subscribeToJob(jobId, {
+          jobToken,
+          onProgress: (progress, status) => {
+            setJobProgress(progress);
+            if (status === 'processing') setAnalysisStatus('analyzing');
+            if (status === 'completed') setAnalysisStatus('complete');
+            if (status === 'failed') setAnalysisStatus('failed');
+          },
+          onComplete: (result) => {
+            setAnalysisData(result);
+            setAnalysisStatus('complete');
+            supabase.from('uploads').update({ score_data: result }).eq('id', targetData.id);
+            setLoading(false);
+          },
+          onError: (error) => {
+            console.error('[ANALYSIS] SSE error:', error);
+            setServerError(error);
+            setAnalysisStatus('failed');
+            setLoading(false);
+          }
+        });
+      } else {
+        // Fallback: try direct analysis endpoint
+        console.log('[ANALYSIS] No job created, attempting direct analysis');
+        try {
+          const analyzeRes = await fetch(`${apiUrl}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              upload_id: targetData.id,
+              media_type: targetData.media_type,
+              file_url: targetData.file_url
+            })
+          });
+          
+          if (analyzeRes.ok) {
+            const result = await analyzeRes.json();
+            setAnalysisData(result);
+            setAnalysisStatus('complete');
+            await supabase.from('uploads').update({ score_data: result }).eq('id', targetData.id);
+          } else {
+            throw new Error('Analysis failed');
+          }
+        } catch (e) {
+          console.error('[ANALYSIS] Direct analysis error:', e);
+          setServerError('Analysis failed. Please try again.');
+          setAnalysisStatus('failed');
+        }
+        setLoading(false);
+      }
+    } catch (e) {
+      console.error('[ANALYSIS] Error:', e);
+      setServerError(e.message || 'Analysis failed');
+      setAnalysisStatus('failed');
+      setLoading(false);
+    }
+  }
         
         try {
           const { data: { session } } = await supabase.auth.getSession();
