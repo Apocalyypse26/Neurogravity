@@ -136,12 +136,18 @@ export async function runSyncAnalysis(uploadId, mediaType, fileUrl) {
 
 export async function checkApiHealth() {
   try {
+    console.log('[API] Checking health at:', `${API_BASE_URL}/api/health`);
     const response = await fetch(`${API_BASE_URL}/api/health`);
+    console.log('[API] Health response status:', response.status);
     if (response.ok) {
-      return response.json();
+      const data = await response.json();
+      console.log('[API] Health data:', data);
+      return data;
     }
+    console.log('[API] Health check failed with status:', response.status);
     return null;
-  } catch {
+  } catch (err) {
+    console.error('[API] Health check error:', err.message, err);
     return null;
   }
 }

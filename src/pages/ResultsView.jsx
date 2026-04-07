@@ -133,7 +133,9 @@ export default function ResultsView({ session }) {
 
   const executeAnalysisHook = async (targetData) => {
     try {
+      console.log('[ANALYSIS] Starting health check, API URL:', import.meta.env.VITE_API_URL);
       const apiHealth = await checkApiHealth();
+      console.log('[ANALYSIS] Health check result:', apiHealth);
       
       if (!apiHealth) {
         logger.error("[ANALYSIS] Backend unavailable");
