@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import Response, StreamingResponse, JSONResponse
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -123,6 +123,29 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestSizeMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Ensure all HTTPException responses return consistent JSON format."""
+    if isinstance(exc.detail, dict):
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": "HTTP_ERROR", "message": str(exc.detail)}
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and return standardized error."""
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
+    env = os.getenv("ENVIRONMENT", "development")
+    message = "Internal server error" if env == "production" else str(exc)
+    return JSONResponse(
+        status_code=500,
+        content={"code": "SERVER_ERROR", "message": message}
+    )
 
 def get_cors_origins() -> list[str]:
     env = os.getenv("ENVIRONMENT", "development")
@@ -490,7 +513,7 @@ async def stream_job_status(request: Request, job_id: str, token: str = None):
         user_id = auth_service.get_user_id_from_token(auth_header)
     
     if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        api_error(401, "Authentication required", code="AUTH_ERROR")
     
     async def event_generator():
         last_status = None
@@ -545,14 +568,14 @@ async def get_job_token(request: Request, job_id: str):
     user_id = auth_service.get_user_id_from_token(auth_header)
     
     if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        api_error(401, "Authentication required", code="AUTH_ERROR")
     
     job = job_manager.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        api_error(404, "Job not found", code="NOT_FOUND")
     
     if job.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to access this job")
+        api_error(403, "Not authorized to access this job", code="AUTH_ERROR")
     
     job_token = auth_service.create_job_token(job_id, user_id, expires_in=3600)
     
@@ -568,7 +591,7 @@ async def get_job_token(request: Request, job_id: str):
 async def get_job_by_upload(request: Request, upload_id: str):
     job = job_manager.get_job_by_upload(upload_id)
     if not job:
-        raise HTTPException(status_code=404, detail="No job found for this upload")
+        api_error(404, "No job found for this upload", code="NOT_FOUND")
     
     return job.to_dict()
 
@@ -579,7 +602,7 @@ async def analyze_target(request: Request, req: AnalysisRequest):
     auth_user_id = auth_service.get_user_id_from_token(auth_header)
     
     if auth_user_id and auth_user_id != req.user_id:
-        raise HTTPException(status_code=403, detail="User ID mismatch")
+        api_error(403, "User ID mismatch", code="AUTH_ERROR")
     
     job_id = await job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
     
@@ -588,7 +611,7 @@ async def analyze_target(request: Request, req: AnalysisRequest):
         return existing_job.result
     
     if existing_job and existing_job.status != JobStatus.PENDING:
-        raise HTTPException(status_code=409, detail="Job already in progress")
+        api_error(409, "Job already in progress", code="CONFLICT")
     
     try:
         result = await job_manager.run_job(
@@ -601,7 +624,7 @@ async def analyze_target(request: Request, req: AnalysisRequest):
         return result
     except Exception as e:
         logger.error("Analysis failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        api_error(500, str(e), code="SERVER_ERROR")
 
 @app.post("/api/analyze-sync")
 @limiter.limit("10/minute")
@@ -614,10 +637,7 @@ async def analyze_sync(request: Request, req: AnalysisRequest):
     """
     env = os.getenv("ENVIRONMENT", "development")
     if env == "production":
-        raise HTTPException(
-            status_code=403,
-            detail="/api/analyze-sync is disabled in production. Use /api/analyze or /api/jobs/create instead."
-        )
+        api_error(403, "/api/analyze-sync is disabled in production. Use /api/analyze or /api/jobs/create instead.", code="FEATURE_DISABLED")
 
     seed = sum(ord(c) for c in req.upload_id)
     brightness_modifier = 0
@@ -635,14 +655,14 @@ async def analyze_sync(request: Request, req: AnalysisRequest):
             stat = sum(img.getdata()) / (img.size[0] * img.size[1])
             brightness_modifier = (stat - 128) / 10
         except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="Media fetch timed out")
+            api_error(504, "Media fetch timed out", code="TIMEOUT")
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise HTTPException(status_code=404, detail="File not found at provided URL")
-            raise HTTPException(status_code=502, detail="Failed to fetch media file")
+                api_error(404, "File not found at provided URL", code="NOT_FOUND")
+            api_error(502, "Failed to fetch media file", code="BAD_GATEWAY")
         except Exception as e:
             logger.error("Failed to process image: %s", e)
-            raise HTTPException(status_code=422, detail="Failed to process media file")
+            api_error(422, "Failed to process media file", code="PROCESSING_ERROR")
 
     global_score = min(max(int(60 + (seeded_random(seed, 1) * 38) + brightness_modifier), 0), 100)
     
@@ -766,7 +786,7 @@ async def create_checkout(request: Request, req: CheckoutRequest):
     auth_user_id = auth_service.get_user_id_from_token(auth_header)
     
     if auth_user_id and auth_user_id != req.user_id:
-        raise HTTPException(status_code=403, detail="User ID mismatch. Please use your authenticated user ID.")
+        api_error(403, "User ID mismatch. Please use your authenticated user ID.", code="AUTH_ERROR")
     
     try:
         if req.package_id in CREDIT_PACKAGES:
@@ -786,14 +806,14 @@ async def create_checkout(request: Request, req: CheckoutRequest):
                 cancel_url=req.cancel_url,
             )
         else:
-            raise HTTPException(status_code=400, detail="Invalid package_id")
+            api_error(400, "Invalid package_id", code="VALIDATION_ERROR")
 
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        api_error(400, str(e), code="VALIDATION_ERROR")
     except Exception as e:
         logger.error("Checkout error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+        api_error(500, "Failed to create checkout session", code="SERVER_ERROR")
 
 
 @app.get("/api/checkout/status/{session_id}")
@@ -803,10 +823,10 @@ async def get_checkout_status(request: Request, session_id: str):
         result = stripe_service.get_session(session_id)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        api_error(400, str(e), code="VALIDATION_ERROR")
     except Exception as e:
         logger.error("Checkout status error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to retrieve checkout status")
+        api_error(500, "Failed to retrieve checkout status", code="SERVER_ERROR")
 
 
 class VerifyPaymentRequest(BaseModel):
@@ -824,7 +844,7 @@ async def verify_and_credit(request: Request, req: VerifyPaymentRequest):
     user_id = auth_service.get_user_id_from_token(auth_header)
     
     if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        api_error(401, "Authentication required", code="AUTH_ERROR")
     
     try:
         result = await stripe_service.verify_session_and_credit(req.session_id, user_id)
@@ -832,12 +852,12 @@ async def verify_and_credit(request: Request, req: VerifyPaymentRequest):
         if result.get("success"):
             return result
         else:
-            raise HTTPException(status_code=400, detail=result.get("error", "Verification failed"))
+            api_error(400, result.get("error", "Verification failed"), code="VALIDATION_ERROR")
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Verify and credit error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to verify payment")
+        api_error(500, "Failed to verify payment", code="SERVER_ERROR")
 
 
 @app.get("/api/subscription/status")
@@ -849,7 +869,7 @@ async def get_subscription_status(request: Request):
         user_id = auth_service.get_user_id_from_token(auth_header)
         
         if not user_id:
-            raise HTTPException(status_code=401, detail="Not authenticated")
+            api_error(401, "Not authenticated", code="AUTH_ERROR")
         
         supabase_url = os.getenv("SUPABASE_URL", "")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -885,7 +905,7 @@ async def cancel_subscription(request: Request):
         user_id = auth_service.get_user_id_from_token(auth_header)
         
         if not user_id:
-            raise HTTPException(status_code=401, detail="Not authenticated")
+            api_error(401, "Not authenticated", code="AUTH_ERROR")
         
         # Get user's subscription from DB
         supabase_url = os.getenv("SUPABASE_URL", "")
@@ -923,12 +943,12 @@ async def cancel_subscription(request: Request):
                 
                 return {"success": True, "message": "Subscription will be cancelled at period end"}
             else:
-                raise HTTPException(status_code=404, detail="No active subscription found")
+                api_error(404, "No active subscription found", code="NOT_FOUND")
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Subscription cancellation error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+        api_error(500, "Failed to cancel subscription", code="SERVER_ERROR")
 
 
 @app.post("/api/webhook/stripe")
@@ -939,10 +959,10 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         logger.info("Webhook processed: %s", result)
     except ValueError as e:
         logger.error("Webhook error: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
+        api_error(400, str(e), code="VALIDATION_ERROR")
     except Exception as e:
         logger.error("Webhook error: %s", e)
-        raise HTTPException(status_code=400, detail="Webhook processing failed")
+        api_error(400, "Webhook processing failed", code="WEBHOOK_ERROR")
 
 
 # --- Admin Endpoints ---
@@ -992,7 +1012,7 @@ async def verify_admin_status(request: Request):
         raise
     except Exception as e:
         logger.error("Admin verify error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to verify admin status")
+        api_error(500, "Failed to verify admin status", code="SERVER_ERROR")
 
 
 @app.get("/api/admin/uploads")
@@ -1006,7 +1026,7 @@ async def get_admin_uploads(request: Request, page: int = 1, limit: int = 50):
         # Verify admin
         user = await auth_service.get_current_user(request.headers.get("authorization"))
         if not await admin_service.verify_admin(user["user_id"]):
-            raise HTTPException(status_code=403, detail="Admin access required")
+            api_error(403, "Admin access required", code="AUTH_ERROR")
         
         # Validate pagination params
         page = max(1, page)
@@ -1033,7 +1053,7 @@ async def get_admin_uploads(request: Request, page: int = 1, limit: int = 50):
         raise
     except Exception as e:
         logger.error("Admin uploads error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch uploads")
+        api_error(500, "Failed to fetch uploads", code="SERVER_ERROR")
 
 
 @app.post("/api/admin/feedback")
@@ -1047,7 +1067,7 @@ async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
         # Verify admin
         user = await auth_service.get_current_user(request.headers.get("authorization"))
         if not await admin_service.verify_admin(user["user_id"]):
-            raise HTTPException(status_code=403, detail="Admin access required")
+            api_error(403, "Admin access required", code="AUTH_ERROR")
         
         # Sanitize feedback to prevent stored XSS
         sanitized_feedback = (
@@ -1065,13 +1085,13 @@ async def submit_admin_feedback(request: Request, req: AdminFeedbackRequest):
         if success:
             return {"success": True, "message": "Feedback submitted successfully"}
         else:
-            raise HTTPException(status_code=500, detail="Failed to submit feedback")
+            api_error(500, "Failed to submit feedback", code="SERVER_ERROR")
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Admin feedback error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to submit feedback")
+        api_error(500, "Failed to submit feedback", code="SERVER_ERROR")
 
 
 @app.get("/api/admin/stats")
@@ -1085,7 +1105,7 @@ async def get_admin_stats(request: Request):
         # Verify admin
         user = await auth_service.get_current_user(request.headers.get("authorization"))
         if not await admin_service.verify_admin(user["user_id"]):
-            raise HTTPException(status_code=403, detail="Admin access required")
+            api_error(403, "Admin access required", code="AUTH_ERROR")
         
         # Get stats
         stats = await admin_service.get_upload_stats()
@@ -1095,7 +1115,7 @@ async def get_admin_stats(request: Request):
         raise
     except Exception as e:
         logger.error("Admin stats error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch statistics")
+        api_error(500, "Failed to fetch statistics", code="SERVER_ERROR")
 
 
 @app.get("/api/admin/upload/{upload_id}")
@@ -1109,7 +1129,7 @@ async def get_admin_upload(request: Request, upload_id: str):
         # Verify admin
         user = await auth_service.get_current_user(request.headers.get("authorization"))
         if not await admin_service.verify_admin(user["user_id"]):
-            raise HTTPException(status_code=403, detail="Admin access required")
+            api_error(403, "Admin access required", code="AUTH_ERROR")
         
         # Get upload
         upload = await admin_service.get_upload_by_id(upload_id)
@@ -1117,13 +1137,13 @@ async def get_admin_upload(request: Request, upload_id: str):
         if upload:
             return upload
         else:
-            raise HTTPException(status_code=404, detail="Upload not found")
+            api_error(404, "Upload not found", code="NOT_FOUND")
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Admin get upload error: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to fetch upload")
+        api_error(500, "Failed to fetch upload", code="SERVER_ERROR")
 
 
 if __name__ == "__main__":

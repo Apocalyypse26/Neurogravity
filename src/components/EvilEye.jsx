@@ -1,5 +1,6 @@
 import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { logger } from '../lib/logger';
 import './EvilEye.css';
 
 function hexToVec3(hex) {
@@ -340,7 +341,7 @@ export default function EvilEye({
         gl.getExtension('WEBGL_lose_context')?.loseContext();
       };
     } catch (e) {
-      console.error('WebGL initialization failed:', e);
+      logger.error('WebGL initialization failed:', e);
       setWebglSupported(false);
     }
   }, [

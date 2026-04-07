@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { logger } from './logger';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -16,7 +17,7 @@ const isValidUrl = (url) => {
 const hasValidConfig = isValidUrl(supabaseUrl) && supabaseAnonKey;
 
 if (!hasValidConfig) {
-  console.warn('Supabase environment variables missing or invalid. Auth features will be disabled.');
+  logger.warn('Supabase environment variables missing or invalid. Auth features will be disabled.');
 }
 
 // Create a mock client if env vars are missing/invalid
