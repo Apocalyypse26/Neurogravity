@@ -286,10 +286,17 @@ class JobManager:
         try:
             # Download media once and cache for reuse across all steps
             logger.info(f"[JOB_MANAGER] Downloading and caching media: {job.file_url}")
-            media_data, media_path = await asyncio.wait_for(
-                media_cache.get_or_download(job.file_url), 
-                timeout=self._download_timeout
-            )
+            try:
+                media_data, media_path = await asyncio.wait_for(
+                    media_cache.get_or_download(job.file_url), 
+                    timeout=self._download_timeout
+                )
+                logger.info(f"[JOB_MANAGER] Media downloaded successfully, path: {media_path}")
+            except asyncio.TimeoutError:
+                raise ValueError(f"Media download timed out after {self._download_timeout}s")
+            except Exception as e:
+                logger.error(f"[JOB_MANAGER] Media download failed: {type(e).__name__}: {str(e)}")
+                raise
             
             job.status = JobStatus.PREPROCESSING
             job.progress = 10
@@ -298,11 +305,17 @@ class JobManager:
                 self._safe_persist_job(job, update_only=True)
             
             # Pass cached media path to preprocessing function with timeout
-            preprocess_result = await asyncio.wait_for(
-                preprocess_func(media_path, job.media_type),
-                timeout=self._preprocess_timeout
-            )
-            logger.info(f"[JOB_MANAGER] Preprocessing done: {preprocess_result.to_dict()}")
+            try:
+                preprocess_result = await asyncio.wait_for(
+                    preprocess_func(media_path, job.media_type),
+                    timeout=self._preprocess_timeout
+                )
+                logger.info(f"[JOB_MANAGER] Preprocessing done: {preprocess_result.to_dict()}")
+            except asyncio.TimeoutError:
+                raise ValueError(f"Preprocessing timed out after {self._preprocess_timeout}s")
+            except Exception as e:
+                logger.error(f"[JOB_MANAGER] Preprocessing failed: {type(e).__name__}: {str(e)}")
+                raise
             
             job.status = JobStatus.OCR_EXTRACTING
             job.progress = 25
@@ -311,11 +324,17 @@ class JobManager:
                 self._safe_persist_job(job, update_only=True)
             
             # Pass cached media path to OCR function with timeout
-            ocr_result = await asyncio.wait_for(
-                ocr_func(media_path, job.media_type),
-                timeout=self._ocr_timeout
-            )
-            logger.info(f"[JOB_MANAGER] OCR done: {ocr_result.to_dict()}")
+            try:
+                ocr_result = await asyncio.wait_for(
+                    ocr_func(media_path, job.media_type),
+                    timeout=self._ocr_timeout
+                )
+                logger.info(f"[JOB_MANAGER] OCR done: {ocr_result.to_dict()}")
+            except asyncio.TimeoutError:
+                raise ValueError(f"OCR timed out after {self._ocr_timeout}s")
+            except Exception as e:
+                logger.error(f"[JOB_MANAGER] OCR failed: {type(e).__name__}: {str(e)}")
+                raise
             
             job.status = JobStatus.TRIBE_ANALYZING
             job.progress = 50
@@ -325,10 +344,11 @@ class JobManager:
             
             seed = sum(ord(c) for c in job.upload_id)
             # Pass cached media path and OCR results to tribe function with timeout
-            tribe_output = await asyncio.wait_for(
-                tribe_func(media_path, job.media_type, seed, ocr_result.text),
-                timeout=self._tribe_timeout
-            )
+            try:
+                tribe_output = await asyncio.wait_for(
+                    tribe_func(media_path, job.media_type, seed, ocr_result.text),
+                    timeout=self._tribe_timeout
+                )
             
             tribe_output.ocr_text = ocr_result.text
             tribe_output.ocr_readability = ocr_result.readability_score

@@ -14,9 +14,9 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: USE_REAL_TRIBE
-        value: false
+        value: true
       - key: ENVIRONMENT
-        value: development
+        value: production
       - key: CORS_ORIGINS
         value: https://www.neuroxscan.fun,https://neurogravity.vercel.app,https://neuroxscan.fun
       - key: PYTHON_VERSION

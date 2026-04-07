@@ -606,21 +606,29 @@ async def analyze_target(request: Request, req: AnalysisRequest):
     
     use_real_tribe = os.getenv("USE_REAL_TRIBE", "false").lower() == "true"
     
-    # Use mock analysis when USE_REAL_TRIBE is false
+    logger.info(f"[ANALYZE] Request: upload_id={req.upload_id}, media_type={req.media_type}")
+    logger.info(f"[ANALYZE] USE_REAL_TRIBE={use_real_tribe}")
+    logger.info(f"[ANALYZE] file_url={req.file_url[:100]}...")
+    
+    # If USE_REAL_TRIBE is false, use mock
     if not use_real_tribe:
-        logger.info(f"[ANALYZE] Using mock analysis for upload {req.upload_id}")
+        logger.info(f"[ANALYZE] Using mock analysis (USE_REAL_TRIBE=false)")
         return await analyze_sync(request, req)
     
-    job_id = await job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
-    
-    existing_job = job_manager.get_job(job_id)
-    if existing_job and existing_job.status == JobStatus.COMPLETED:
-        return existing_job.result
-    
-    if existing_job and existing_job.status != JobStatus.PENDING:
-        api_error(409, "Job already in progress", code="CONFLICT")
-    
+    # Try the real pipeline
     try:
+        job_id = await job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
+        logger.info(f"[ANALYZE] Created job: {job_id}")
+        
+        existing_job = job_manager.get_job(job_id)
+        if existing_job and existing_job.status == JobStatus.COMPLETED:
+            logger.info(f"[ANALYZE] Returning cached result for job: {job_id}")
+            return existing_job.result
+        
+        if existing_job and existing_job.status != JobStatus.PENDING:
+            api_error(409, "Job already in progress", code="CONFLICT")
+        
+        logger.info(f"[ANALYZE] Running full job pipeline for: {job_id}")
         result = await job_manager.run_job(
             job_id,
             preprocess_service.process_media,
@@ -628,12 +636,13 @@ async def analyze_target(request: Request, req: AnalysisRequest):
             tribe_service.analyze,
             score_mapper.map
         )
+        logger.info(f"[ANALYZE] Job completed successfully: {job_id}")
         return result
+        
     except Exception as e:
-        logger.error("Analysis failed: %s", e)
-        # Fall back to mock analysis instead of returning error
-        logger.info("[ANALYZE] Job failed, falling back to mock analysis")
-        return await analyze_sync(request, req)
+        logger.error(f"[ANALYZE] Pipeline failed: {type(e).__name__}: {str(e)}")
+        # Don't fallback silently - raise the error so frontend knows it failed
+        api_error(500, f"Analysis pipeline failed: {str(e)}", code="SERVER_ERROR")
 
 @app.post("/api/analyze-sync")
 @limiter.limit("10/minute")
