@@ -158,20 +158,24 @@ export default function ResultsView({ session }) {
         setAnalysisStatus('polling');
         
         try {
+          console.log('[ANALYSIS] Resuming existing job:', jobId);
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.access_token) {
             const tokenRes = await fetch(`${apiUrl}/api/jobs/${jobId}/token`, {
               headers: { 'Authorization': `Bearer ${session.access_token}` }
             });
+            console.log('[ANALYSIS] Token response status:', tokenRes.status);
             if (tokenRes.ok) {
               const tokenData = await tokenRes.json();
               jobToken = tokenData.token;
+              console.log('[ANALYSIS] Got job token');
             }
           }
         } catch (e) {
-          // Could not get job token for resume
+          console.error('[ANALYSIS] Could not get job token:', e.message);
         }
       } else {
+        console.log('[ANALYSIS] Creating new job...');
         const { data: { session } } = await supabase.auth.getSession();
         
         try {
@@ -188,18 +192,21 @@ export default function ResultsView({ session }) {
             })
           });
           
+          console.log('[ANALYSIS] Create job response status:', createRes.status);
+          
           if (createRes.ok) {
             const jobData = await createRes.json();
             jobId = jobData.job_id;
             jobToken = jobData.job_token;
             setAnalysisStatus('processing');
+            console.log('[ANALYSIS] Job created:', jobId);
           } else {
-            console.error('[ANALYSIS] Failed to create job:', createRes.status);
-            // Fall back to direct analysis
+            const errText = await createRes.text();
+            console.error('[ANALYSIS] Failed to create job:', createRes.status, errText);
             jobId = null;
           }
         } catch (e) {
-          console.error('[ANALYSIS] Error creating job:', e);
+          console.error('[ANALYSIS] Error creating job:', e.message, e);
           jobId = null;
         }
       }
