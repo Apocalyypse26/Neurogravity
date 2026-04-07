@@ -136,8 +136,15 @@ export async function runSyncAnalysis(uploadId, mediaType, fileUrl) {
 
 export async function checkApiHealth() {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     console.log('[API] Checking health at:', `${API_BASE_URL}/api/health`);
-    const response = await fetch(`${API_BASE_URL}/api/health`);
+    const response = await fetch(`${API_BASE_URL}/api/health`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
     console.log('[API] Health response status:', response.status);
     if (response.ok) {
       const data = await response.json();
@@ -147,7 +154,10 @@ export async function checkApiHealth() {
     console.log('[API] Health check failed with status:', response.status);
     return null;
   } catch (err) {
-    console.error('[API] Health check error:', err.message, err);
+    console.error('[API] Health check error:', err.name, err.message);
+    if (err.name === 'AbortError') {
+      console.error('[API] Request timed out after 10 seconds');
+    }
     return null;
   }
 }
