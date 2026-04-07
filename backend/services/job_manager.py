@@ -349,10 +349,14 @@ class JobManager:
                     tribe_func(media_path, job.media_type, seed, ocr_result.text),
                     timeout=self._tribe_timeout
                 )
-            
-            tribe_output.ocr_text = ocr_result.text
-            tribe_output.ocr_readability = ocr_result.readability_score
-            logger.info(f"[JOB_MANAGER] TRIBE analysis done")
+                tribe_output.ocr_text = ocr_result.text
+                tribe_output.ocr_readability = ocr_result.readability_score
+                logger.info(f"[JOB_MANAGER] TRIBE analysis done")
+            except asyncio.TimeoutError:
+                raise ValueError(f"Tribe analysis timed out after {self._tribe_timeout}s")
+            except Exception as e:
+                logger.error(f"[JOB_MANAGER] Tribe analysis failed: {type(e).__name__}: {str(e)}")
+                raise
             
             job.status = JobStatus.MAPPING_SCORES
             job.progress = 75
