@@ -135,29 +135,53 @@ export async function runSyncAnalysis(uploadId, mediaType, fileUrl) {
 }
 
 export async function checkApiHealth() {
+  const url = `${API_BASE_URL}/api/health`;
+  console.log('[API] Full URL being used:', url);
+  console.log('[API] API_BASE_URL value:', API_BASE_URL);
+  console.log('[API] window.location.origin:', window.location.origin);
+  
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.log('[API] Request timed out after 10 seconds');
+    }, 10000);
     
-    console.log('[API] Checking health at:', `${API_BASE_URL}/api/health`);
-    const response = await fetch(`${API_BASE_URL}/api/health`, {
-      signal: controller.signal
+    const response = await fetch(url, {
+      signal: controller.signal,
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
     });
     clearTimeout(timeoutId);
     
-    console.log('[API] Health response status:', response.status);
+    console.log('[API] Response received, status:', response.status);
+    console.log('[API] Response ok:', response.ok);
+    console.log('[API] Response statusText:', response.statusText);
+    
     if (response.ok) {
       const data = await response.json();
       console.log('[API] Health data:', data);
       return data;
     }
+    
     console.log('[API] Health check failed with status:', response.status);
     return null;
   } catch (err) {
-    console.error('[API] Health check error:', err.name, err.message);
+    console.error('[API] Health check error details:');
+    console.error('[API] Error name:', err.name);
+    console.error('[API] Error message:', err.message);
+    console.error('[API] Error stack:', err.stack);
+    console.error('[API] Is DOMException:', err instanceof DOMException);
+    
     if (err.name === 'AbortError') {
-      console.error('[API] Request timed out after 10 seconds');
+      console.error('[API] Request was aborted/timed out');
     }
+    if (err.name === 'TypeError') {
+      console.error('[API] TypeError - possible network/CORS issue');
+    }
+    
     return null;
   }
 }
