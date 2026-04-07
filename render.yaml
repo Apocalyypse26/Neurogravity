@@ -18,7 +18,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: https://www.neuroxscan.fun,https://neurogravity.vercel.app
+        value: https://www.neuroxscan.fun,https://neurogravity.vercel.app,https://neuroxscan.fun
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: STRIPE_SECRET_KEY
