@@ -135,51 +135,40 @@ export default function ResultsView({ session }) {
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       console.log('[ANALYSIS] Starting analysis, API URL:', apiUrl);
-      
-      setAnalysisStatus('preparing');
-      
-      // Skip job creation, go directly to synchronous analysis
-      console.log('[ANALYSIS] Calling direct analysis endpoint...');
+      console.log('[ANALYSIS] Calling /api/analyze endpoint...');
       setAnalysisStatus('analyzing');
       
-      try {
-        const analyzeRes = await fetch(`${apiUrl}/api/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            upload_id: targetData.id,
-            media_type: targetData.media_type,
-            file_url: targetData.file_url
-          })
-        });
-        
-        console.log('[ANALYSIS] Direct analysis response status:', analyzeRes.status);
-        
-        if (analyzeRes.ok) {
-          const result = await analyzeRes.json();
-          console.log('[ANALYSIS] Analysis complete:', result);
-          setAnalysisData(result);
-          setAnalysisStatus('complete');
-          await supabase.from('uploads').update({ score_data: result }).eq('id', targetData.id);
-        } else {
-          const errText = await analyzeRes.text();
-          console.error('[ANALYSIS] Analysis failed:', analyzeRes.status, errText);
-          setServerError(`Analysis failed (${analyzeRes.status}): ${errText}`);
-          setAnalysisStatus('failed');
-        }
-      } catch (fetchErr) {
-        console.error('[ANALYSIS] Fetch error:', fetchErr.message, fetchErr);
-        setServerError(`Network error: ${fetchErr.message}`);
+      const analyzeRes = await fetch(`${apiUrl}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_id: targetData.id,
+          media_type: targetData.media_type,
+          file_url: targetData.file_url
+        })
+      });
+      
+      console.log('[ANALYSIS] Direct analysis response status:', analyzeRes.status);
+      
+      if (analyzeRes.ok) {
+        const result = await analyzeRes.json();
+        console.log('[ANALYSIS] Analysis complete:', result);
+        setAnalysisData(result);
+        setAnalysisStatus('complete');
+        await supabase.from('uploads').update({ score_data: result }).eq('id', targetData.id);
+      } else {
+        const errText = await analyzeRes.text();
+        console.error('[ANALYSIS] Analysis failed:', analyzeRes.status, errText);
+        setServerError(`Analysis failed (${analyzeRes.status}): ${errText}`);
         setAnalysisStatus('failed');
       }
-      
-      setLoading(false);
-    } catch (e) {
-      console.error('[ANALYSIS] Error:', e);
-      setServerError(e.message || 'Analysis failed');
+    } catch (fetchErr) {
+      console.error('[ANALYSIS] Fetch error:', fetchErr.message, fetchErr);
+      setServerError(`Network error: ${fetchErr.message}`);
       setAnalysisStatus('failed');
-      setLoading(false);
     }
+    
+    setLoading(false);
   }
 
   const submitFeedback = async () => {
