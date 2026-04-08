@@ -42,13 +42,11 @@ export const supabase = hasValidConfig
       from: () => ({ 
         select: () => ({ 
           eq: () => ({ 
-            single: async () => ({ data: null, error: { message: 'Supabase not configured' } }) 
+            single: async () => { return { data: null, error: { message: 'Supabase not configured' } }; } 
           }) 
         }),
         update: () => ({ 
-          eq: () => ({ 
-            async () => ({ error: null }) 
-          }) 
+          eq: async () => { return { error: null }; }
         })
       }),
       auth: {
