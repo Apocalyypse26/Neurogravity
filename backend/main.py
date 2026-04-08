@@ -643,8 +643,25 @@ async def analyze_target(request: Request, req: AnalysisRequest):
     except Exception as e:
         logger.error(f"[ANALYZE] Pipeline failed: {type(e).__name__}: {str(e)}")
         logger.info("[ANALYZE] Falling back to mock analysis due to pipeline failure")
-        # Fall back to mock analysis instead of raising error
-        return await analyze_sync(request, req)
+        try:
+            # Try to get mock result
+            return await analyze_sync(request, req)
+        except Exception as fallback_error:
+            # If fallback also fails, return a valid response
+            logger.error(f"[ANALYZE] Fallback also failed: {fallback_error}")
+            return {
+                "globalScore": 50,
+                "subScores": [
+                    {"name": "Attention Pull", "val": 50},
+                    {"name": "Visual Impact", "val": 50},
+                    {"name": "Text Clarity", "val": 50},
+                    {"name": "Meme Strength", "val": 50},
+                    {"name": "Crypto Relevance", "val": 50}
+                ],
+                "confidence": {"text": "EXPERIMENTAL", "color": "#8b5cf6"},
+                "rank": "[BETA] Analysis unavailable",
+                "fixes": ["Service temporarily unavailable"]
+            }
 
 @app.post("/api/analyze-sync")
 @limiter.limit("10/minute")
