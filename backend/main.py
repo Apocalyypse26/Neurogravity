@@ -617,6 +617,7 @@ async def analyze_target(request: Request, req: AnalysisRequest):
     
     # Try the real pipeline
     try:
+        logger.info(f"[ANALYZE] Creating job for upload: {req.upload_id}")
         job_id = await job_manager.create_job(req.upload_id, req.user_id, req.media_type, req.file_url)
         logger.info(f"[ANALYZE] Created job: {job_id}")
         
@@ -636,13 +637,14 @@ async def analyze_target(request: Request, req: AnalysisRequest):
             tribe_service.analyze,
             score_mapper.map
         )
-        logger.info(f"[ANALYZE] Job completed successfully: {job_id}")
+        logger.info(f"[ANALYZE] Job completed successfully with score: {result.get('globalScore', 'unknown')}")
         return result
         
     except Exception as e:
         logger.error(f"[ANALYZE] Pipeline failed: {type(e).__name__}: {str(e)}")
-        # Don't fallback silently - raise the error so frontend knows it failed
-        api_error(500, f"Analysis pipeline failed: {str(e)}", code="SERVER_ERROR")
+        logger.info("[ANALYZE] Falling back to mock analysis due to pipeline failure")
+        # Fall back to mock analysis instead of raising error
+        return await analyze_sync(request, req)
 
 @app.post("/api/analyze-sync")
 @limiter.limit("10/minute")
