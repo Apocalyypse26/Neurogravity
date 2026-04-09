@@ -159,18 +159,26 @@ def get_cors_origins() -> list[str]:
     env = os.getenv("ENVIRONMENT", "development")
     cors_config = os.getenv("CORS_ORIGINS", "")
     
+    # Always include production domains
+    production_origins = [
+        "https://www.neuroxscan.fun",
+        "https://neuroxscan.fun",
+        "https://neurogravity.vercel.app",
+    ]
+    
     if not cors_config:
         if env == "production":
-            raise ValueError("CORS_ORIGINS must be configured in production")
-        logger.warning("No CORS_ORIGINS configured - defaulting to localhost only")
-        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+            logger.warning("No CORS_ORIGINS env var - using hardcoded production domains")
+            return production_origins
+        logger.warning("No CORS_ORIGINS configured - defaulting to localhost + production")
+        return ["http://localhost:5173", "http://127.0.0.1:5173"] + production_origins
     
     origins = [o.strip() for o in cors_config.split(",") if o.strip()]
     
-    if env == "production":
-        for origin in origins:
-            if "*" in origin:
-                raise ValueError(f"Wildcard CORS origins not allowed in production: {origin}")
+    # Ensure production domains are always included
+    for domain in production_origins:
+        if domain not in origins:
+            origins.append(domain)
     
     return origins
 
