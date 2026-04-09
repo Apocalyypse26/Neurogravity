@@ -29,11 +29,15 @@ def api_error(status_code: int, message: str, code: str = "API_ERROR", field: st
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        response: Response = await call_next(request)
+        # Skip security headers for OPTIONS preflight requests
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            return response
+        response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' *; font-src 'self'"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
@@ -41,6 +45,10 @@ class RequestSizeMiddleware(BaseHTTPMiddleware):
     MAX_BODY_SIZE = 10 * 1024 * 1024  # 10MB
 
     async def dispatch(self, request: Request, call_next):
+        # Skip body check for OPTIONS preflight requests
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            return response
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > self.MAX_BODY_SIZE:
             return Response(status_code=413, content="Request body too large")
