@@ -228,13 +228,21 @@ export default function ResultsView({ session }) {
             return;
           }
           
-          // Non-OK response — don't retry HTTP errors, they won't change
+          // Handle 409 = job already in progress from duplicate request
+          if (analyzeRes.status === 409) {
+            console.log('[ANALYSIS] Job already running, waiting 5s then retrying...');
+            setAnalysisStatus('analyzing');
+            await new Promise(r => setTimeout(r, 5000));
+            continue; // retry — job should be done by now
+          }
+          
+          // Other non-OK response — don't retry HTTP errors
           const errText = await analyzeRes.text();
           console.error('[ANALYSIS] /api/analyze failed:', analyzeRes.status, errText);
           let errorMsg = `Analysis failed (${analyzeRes.status})`;
           try {
             const errJson = JSON.parse(errText);
-            errorMsg = errJson.detail || errJson.message || errorMsg;
+            errorMsg = errJson.detail?.message || errJson.detail || errJson.message || errorMsg;
           } catch {}
           setServerError(errorMsg);
           setAnalysisStatus('failed');

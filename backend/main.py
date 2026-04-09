@@ -632,8 +632,19 @@ async def analyze_target(request: Request, req: AnalysisRequest):
             logger.info(f"[ANALYZE] Returning cached result for job: {job_id}")
             return existing_job.result
         
-        if existing_job and existing_job.status != JobStatus.PENDING:
-            api_error(409, "Job already in progress", code="CONFLICT")
+        if existing_job and existing_job.status not in [JobStatus.PENDING, JobStatus.FAILED]:
+            # Job is already in progress from another request — wait for it
+            logger.info(f"[ANALYZE] Job {job_id} already in progress ({existing_job.status}), waiting...")
+            for _ in range(60):  # Wait up to 60 seconds
+                await asyncio.sleep(1)
+                existing_job = job_manager.get_job(job_id)
+                if existing_job and existing_job.status == JobStatus.COMPLETED:
+                    logger.info(f"[ANALYZE] Job {job_id} completed while waiting, returning result")
+                    return existing_job.result
+                if existing_job and existing_job.status == JobStatus.FAILED:
+                    break
+            # If still not done, continue to run a new job
+            logger.warning(f"[ANALYZE] Job {job_id} didn't complete in time, proceeding")
         
         logger.info(f"[ANALYZE] Running hybrid pipeline for: {job_id}")
         result = await job_manager.run_job(
