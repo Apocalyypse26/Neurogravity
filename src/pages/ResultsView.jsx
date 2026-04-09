@@ -131,12 +131,24 @@ export default function ResultsView({ session }) {
       
       if (data) {
         setUpload(data)
-        if (data.score_data) {
+        // Check if cached score_data is from old mock/fallback mode
+        const isStaleMockData = data.score_data && (
+          (data.score_data.rank && data.score_data.rank.includes('WARNING')) ||
+          (data.score_data.rank && data.score_data.rank.includes('fallback')) ||
+          !data.score_data.confidence ||
+          (data.score_data.confidence && data.score_data.confidence.text === 'EXPERIMENTAL')
+        )
+        
+        if (data.score_data && !isStaleMockData) {
           // Normalize score_data from snake_case to camelCase
           const normalized = normalizeScoreData(data.score_data)
           setAnalysisData(normalized)
           setLoading(false)
         } else {
+          // No valid cached result — run fresh analysis
+          if (isStaleMockData) {
+            console.log('[ResultsView] Stale mock data detected, re-analyzing...')
+          }
           await executeAnalysisHook(data)
         }
       } else {
