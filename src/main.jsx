@@ -5,6 +5,24 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { Analytics } from '@vercel/analytics/react'
 import { injectSpeedInsights } from '@vercel/speed-insights'
+import { initToolbar } from '@21st-extension/toolbar'
+
+// 2. Define your toolbar configuration
+const stagewiseConfig = {
+  plugins: [],
+};
+
+// 3. Initialize the toolbar when your app starts
+function setupStagewise() {
+  // Only initialize once and only in development mode
+  // Using import.meta.env.DEV instead of process.env to ensure compatibility with Vite
+  if (import.meta.env.DEV) {
+    initToolbar(stagewiseConfig);
+  }
+}
+
+// Call the setup function when appropriate for your framework
+setupStagewise();
 
 // Initialize Speed Insights
 injectSpeedInsights()

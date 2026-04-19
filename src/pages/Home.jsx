@@ -39,17 +39,18 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   
-  const memeImages = [
-    { src: '/cyber_doge_meme.png', alt: 'Cyber Doge Meme', scanTag: 'IMAGE_SCAN', modelTag: 'NEURO-v3' },
-    { src: '/viral_pepe_meme.png', alt: 'Viral Pepe Meme', scanTag: 'VIRAL_DETECTED', modelTag: 'THREAT_LEVEL' },
-    { src: '/PEPE_Moon.mp4.png', alt: 'PEPE Moon Meme', scanTag: 'MOON_MISSION', modelTag: 'VIRAL_v2' },
+const memeImages = [
+    { src: '/token_logo_sample.png', alt: 'Token Logo', scanTag: 'TOKEN_SCAN', modelTag: 'TRUST_V2' },
+    { src: '/token_banner_sample.png', alt: 'Token Banner', scanTag: 'ASSET_SCAN', modelTag: 'PATTERN_V2' },
+    { src: '/token_site_sample.png', alt: 'Token Website', scanTag: 'LAUNCH_SCAN', modelTag: 'QUALITY_V2' },
   ];
   
-  const analysisText = `> Neural scan complete.
-> Dopamine index: 847% BASELINE
-> Viral coefficient: ALPHA++
-> Deploy to: [X] [Telegram] [TikTok]
-> Recommendation: IMMEDIATE`;
+  const analysisText = `> Scan complete.
+> TRUST SCORE: 78/100
+> SCAM RISK: MEDIUM
+> LAUNCH QUALITY: 64/100
+> ORIGINALITY: 51/100
+> RECOMMENDATION: review before entry`;
 
   useEffect(() => {
     let i = 0;
@@ -80,16 +81,16 @@ export default function Home() {
   }, [memeImages.length]);
 
   const features = [
-    { icon: <Brain className="feature-svg" />, title: 'Neural Analysis', desc: 'Deep-learning models trained on viral meme patterns across all major platforms' },
-    { icon: <BoltIcon className="feature-svg" />, title: 'Instant Scoring', desc: 'Real-time virality assessment in under 3 seconds with confidence metrics' },
-    { icon: <Target className="feature-svg" />, title: 'Platform Targeting', desc: 'AI-powered recommendations for X, Telegram, Instagram, and TikTok optimization' },
-    { icon: <Shield className="feature-svg" />, title: 'Risk Assessment', desc: 'Detect shadowbans, algorithmic penalties, and content flagged for removal' },
+    { icon: <Target className="feature-svg" />, title: 'Trust Score', desc: 'Aggregates branding, asset quality, and visual consistency into a single 0-100 score.' },
+    { icon: <Shield className="feature-svg" />, title: 'Pattern Detection', desc: 'Flags derivative branding, copied visuals, and common low-effort launch tactics.' },
+    { icon: <BoltIcon className="feature-svg" />, title: 'Launch Audit', desc: 'Evaluates token presentation polish and market-readiness signals.' },
+    { icon: <Brain className="feature-svg" />, title: 'Evidence', desc: 'Every finding links back to the original asset. Export for due diligence.' },
   ];
 
   const stats = [
-    { value: 50000, suffix: '+', label: 'Memes Analyzed' },
-    { value: 94, suffix: '%', label: 'Accuracy Rate' },
-    { value: 2.3, suffix: 's', label: 'Avg Analysis Time' },
+    { value: 5000, suffix: '+', label: 'Tokens Analyzed' },
+    { value: 50, suffix: '+', label: 'Pattern Types' },
+    { value: 1.2, suffix: 's', label: 'Avg Scan Time' },
   ];
 
   return (
@@ -107,18 +108,18 @@ export default function Home() {
       </div>
 
       {/* WebGL EvilEye Background */}
-      <div className="webgl-container">
+      <div className="webgl-container" style={{ opacity: 0.5 }}>
         <EvilEye
           eyeColor="#FF6F37"
-          intensity={1.5}
-          pupilSize={0.6}
-          irisWidth={0.25}
-          glowIntensity={0.35}
-          scale={1.2}
-          noiseScale={1}
-          pupilFollow={1}
-          flameSpeed={1}
-          backgroundColor="#060010"
+          intensity={0.7}
+          pupilSize={0.5}
+          irisWidth={0.2}
+          glowIntensity={0.15}
+          scale={1.0}
+          noiseScale={0.8}
+          pupilFollow={0.5}
+          flameSpeed={0.6}
+          backgroundColor="#030005"
         />
       </div>
 
@@ -137,10 +138,10 @@ export default function Home() {
           </div>
           <nav className="nav-links">
             <a href="#features" className="nav-link">
-              <Sparkles size={14} /> Features
+              <Target size={14} /> Scanner
             </a>
-            <a href="#stats" className="nav-link">
-              <TrendingUp size={14} /> Stats
+            <a href="#features" className="nav-link">
+              <Brain size={14} /> Evidence
             </a>
             <a href="#pricing" className="nav-link">
               <Shield size={14} /> Pricing
@@ -150,7 +151,7 @@ export default function Home() {
             </Link>
           </nav>
           <Link to="/auth" className="btn-nav">
-            Launch Terminal
+            Launch Scanner
             <span className="btn-arrow">→</span>
           </Link>
           <button 
@@ -177,7 +178,7 @@ export default function Home() {
         <a href="#pricing" onClick={() => setMobileMenuOpen(false)}>Pricing</a>
         <Link to="/docs" onClick={() => setMobileMenuOpen(false)}>Documentation</Link>
         <Link to="/auth" className="btn-nav" onClick={() => setMobileMenuOpen(false)}>
-          Launch Terminal
+          Launch Scanner
         </Link>
       </div>
 
@@ -187,38 +188,38 @@ export default function Home() {
           <div className="hero-content">
             <div className="hero-badge">
               <span className="badge-pulse" />
-              Invite-Only Access Available
+              TOKEN TRUST INTELLIGENCE
             </div>
             
             <h1 className="hero-title">
-              <span className="title-line">Score Your Content</span>
-              <span className="title-gradient">Before The World Sees It</span>
+              <span className="title-line">Scan a token</span>
+              <span className="title-gradient">before you trust it</span>
             </h1>
             
             <p className="hero-subtitle">
-              AI-powered virality scoring for crypto memes and visual content. 
-              Predict viral potential across X, Telegram, Instagram, and TikTok.
+              NEUROX scans token branding, launch assets, and public visuals to surface trust signals, 
+              scam risk, and launch quality in seconds.
             </p>
             
             <div className="hero-cta">
               <Link to="/auth" className="btn-primary-large glow-button">
                 <BoltIcon size={20} />
-                Try Free Score
+                Launch Scanner
               </Link>
-              <Link to="/auth" className="btn-secondary-large">
-                Join Waitlist
+              <Link to="/docs" className="btn-secondary-large">
+                View Documentation
               </Link>
             </div>
 
             <div className="hero-trust">
               <span className="trust-badge">
-                <Shield size={12} /> Secure
+                <Shield size={12} /> Visual Analysis
               </span>
               <span className="trust-badge">
-                <Brain size={12} /> AI-Powered
+                <Brain size={12} /> Pattern Detection
               </span>
               <span className="trust-badge">
-                <BoltIcon size={12} /> Instant
+                <BoltIcon size={12} /> Evidence-Based
               </span>
             </div>
           </div>
@@ -246,72 +247,62 @@ export default function Home() {
                     <span className="tag-model">{memeImages[currentImageIndex].modelTag}</span>
                   </div>
                   <div className="preview-ranking">
-                    <div className="ranking-header">TOP THREATS</div>
+                    <div className="ranking-header">RED FLAGS</div>
                     <div className="ranking-row active">
-                      <span className="rank">#1</span>
-                      <span className="name">PEPE_Moon.png</span>
-                      <span className="score-high">97</span>
+                      <span className="rank">!</span>
+                      <span className="name">branding consistency below threshold</span>
+                      <span className="score-high">HIGH</span>
                     </div>
                     <div className="ranking-row">
-                      <span className="rank">#2</span>
-                      <span className="name">cyber_doge_meme.png</span>
-                      <span className="score-high">94</span>
+                      <span className="rank">!</span>
+                      <span className="name">repeated visual motifs detected</span>
+                      <span className="score-high">MED</span>
                     </div>
                     <div className="ranking-row">
-                      <span className="rank">#3</span>
-                      <span className="name">diamond_hands_wagmi.png</span>
-                      <span className="score-high">91</span>
+                      <span className="rank">!</span>
+                      <span className="name">promo styling appears derivative</span>
+                      <span className="score-mid">MED</span>
                     </div>
                     <div className="ranking-row">
-                      <span className="rank">#4</span>
-                      <span className="name">laser_eyes_btc.png</span>
-                      <span className="score-mid">87</span>
-                    </div>
-                    <div className="ranking-row">
-                      <span className="rank">#5</span>
-                      <span className="name">wojak_feels.png</span>
-                      <span className="score-mid">83</span>
-                    </div>
-                    <div className="ranking-row">
-                      <span className="rank">#6</span>
-                      <span className="name">chad_trader.png</span>
-                      <span className="score-mid">79</span>
+                      <span className="rank">!</span>
+                      <span className="name">aggressive retail-bait copy patterns</span>
+                      <span className="score-mid">LOW</span>
                     </div>
                   </div>
                 </div>
                 <div className="preview-right">
                   <div className="score-display">
-                    <div className="score-label">VIRALITY SCORE</div>
-                    <div className="score-number">94<span className="score-total">/100</span></div>
-                    <div className="score-tag">CRITICAL THREAT</div>
+                    <div className="score-label">TRUST SCORE</div>
+                    <div className="score-number">78<span className="score-total">/100</span></div>
+                    <div className="score-tag">MEDIUM RISK</div>
                   </div>
                   <div className="preview-metrics">
                     <div className="metric">
-                      <span className="metric-label">Impact</span>
+                      <span className="metric-label">Trust Score</span>
                       <div className="metric-bar">
-                        <div className="metric-fill" style={{ width: '96%' }} />
+                        <div className="metric-fill" style={{ width: '78%' }} />
                       </div>
-                      <span className="metric-value">96</span>
+                      <span className="metric-value">78</span>
                     </div>
                     <div className="metric">
-                      <span className="metric-label">Hype</span>
+                      <span className="metric-label">Launch Quality</span>
                       <div className="metric-bar">
-                        <div className="metric-fill" style={{ width: '88%' }} />
+                        <div className="metric-fill" style={{ width: '64%' }} />
                       </div>
-                      <span className="metric-value">88</span>
+                      <span className="metric-value">64</span>
                     </div>
                     <div className="metric">
-                      <span className="metric-label">Meme-Q</span>
+                      <span className="metric-label">Originality</span>
                       <div className="metric-bar">
-                        <div className="metric-fill" style={{ width: '82%' }} />
+                        <div className="metric-fill" style={{ width: '51%' }} />
                       </div>
-                      <span className="metric-value">82</span>
+                      <span className="metric-value">51</span>
                     </div>
                   </div>
                   <div className="analysis-stream">
                     <div className="stream-header">
                       <span className="recording-indicator" />
-                      NEURAL STREAM
+                      ANALYSIS STREAM
                     </div>
                     <div className="stream-text">{typingText}<span className="cursor-blink">_</span></div>
                   </div>
@@ -347,9 +338,9 @@ export default function Home() {
         <section id="features" className="features-section">
           <div className="section-header-animated">
             <h2 className="section-title">
-              <span className="title-accent">//</span> THREAT ANALYSIS SUITE
+              <span className="title-accent">//</span> TRUST INTELLIGENCE MODULES
             </h2>
-            <p className="section-subtitle">Enterprise-grade tools for viral content optimization</p>
+            <p className="section-subtitle">Visual intelligence tools for crypto token research</p>
           </div>
           
           <div className="features-grid">
@@ -370,9 +361,9 @@ export default function Home() {
         <section id="pricing" className="pricing-section">
           <div className="section-header-animated">
             <h2 className="section-title">
-              <span className="title-accent">//</span> OPERATIVE TIERS
+              <span className="title-accent">//</span> SCANNER TIERS
             </h2>
-            <p className="section-subtitle">Choose your level of neuro-viral dominance</p>
+            <p className="section-subtitle">Choose your level of trust intelligence access</p>
           </div>
           
           <div className="pricing-cards">
@@ -382,10 +373,10 @@ export default function Home() {
                 <div className="tier-price">FREE</div>
               </div>
               <ul className="tier-benefits">
-                <li><span className="check">✓</span> 10 image scans/day</li>
-                <li><span className="check">✓</span> Basic virality score</li>
-                <li><span className="check inactive">✗</span> Video analysis</li>
-                <li><span className="check inactive">✗</span> API access</li>
+                <li><span className="check">✓</span> 3 scans/month</li>
+                <li><span className="check">✓</span> Basic Trust Score</li>
+                <li><span className="check inactive">✗</span> Evidence Layer</li>
+                <li><span className="check inactive">✗</span> PDF exports</li>
               </ul>
               <Link to="/auth" className="btn-tier">Initialize</Link>
             </div>
@@ -393,17 +384,17 @@ export default function Home() {
             <div className="pricing-card-animated tier-pro">
               <div className="tier-badge">RECOMMENDED</div>
               <div className="tier-header">
-                <span className="tier-name text-primary">PRIME OPERATOR</span>
-                <div className="tier-price">$29<span className="tier-period">/mo</span></div>
+                <span className="tier-name text-primary">PRIME</span>
+                <div className="tier-price">$49<span className="tier-period">/mo</span></div>
               </div>
               <ul className="tier-benefits">
-                <li><span className="check">✓</span> Unlimited deep scans</li>
-                <li><span className="check">✓</span> Full video analysis (20s)</li>
-                <li><span className="check">✓</span> Platform optimization</li>
-                <li><span className="check">✓</span> Priority API access</li>
+                <li><span className="check">✓</span> Unlimited scans</li>
+                <li><span className="check">✓</span> Full Evidence Layer</li>
+                <li><span className="check">✓</span> PDF exports</li>
+                <li><span className="check">✓</span> Priority processing</li>
               </ul>
               <Link to="/auth" className="btn-tier-primary">
-                Deploy Now <span className="btn-arrow">→</span>
+                Launch Scanner <span className="btn-arrow">→</span>
               </Link>
             </div>
 
@@ -416,7 +407,7 @@ export default function Home() {
                 <li><span className="check">✓</span> 10 scans for $15</li>
                 <li><span className="check">✓</span> 50 scans for $49</li>
                 <li><span className="check">✓</span> 200 scans for $99</li>
-                <li><span className="check">✓</span> No subscription needed</li>
+                <li><span className="check">✓</span> No expiry date</li>
               </ul>
               <Link to="/auth" className="btn-tier">Buy Credits</Link>
             </div>
@@ -426,11 +417,11 @@ export default function Home() {
         {/* CTA Section */}
         <section className="cta-section">
           <div className="cta-content">
-            <h2>Ready to Dominate?</h2>
-            <p>Join thousands of operators maximizing their viral potential</p>
+            <h2>Scan before you ape.</h2>
+            <p>Get a trust assessment in seconds. No account required for basic scans.</p>
             <Link to="/auth" className="btn-cta-large">
               <BoltIcon size={24} />
-              Start Scoring Now
+              Scan a Token
             </Link>
           </div>
         </section>
@@ -444,7 +435,7 @@ export default function Home() {
             </div>
             <span>NEUROX</span>
           </div>
-          <p className="footer-copy">© 2026 NEUROX Protocol. All systems operational.</p>
+          <p className="footer-copy">© 2026 NEUROX. All rights reserved.</p>
           <div className="footer-links">
             <Link to="/docs">Documentation</Link>
             <a href="https://x.com/NEUROOXX" target="_blank" rel="noopener noreferrer">X / Twitter</a>

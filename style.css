@@ -1,20 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --color-bg: #050010;
-  --color-bg-secondary: #0a0618;
-  --color-surface: rgba(20, 12, 35, 0.6);
-  --color-surface-hover: rgba(30, 18, 50, 0.8);
+  --color-bg: #000000;
+  --color-bg-secondary: #0a0a0a;
+  --color-surface: rgba(20, 20, 20, 0.6);
+  --color-surface-hover: rgba(30, 30, 30, 0.8);
   --color-text: #FFFFFF;
   --color-text-muted: #D4CCE0;
   --color-text-dim: #B8A9C9;
   
-  --color-primary: #FF6F37;
-  --color-primary-glow: rgba(255, 111, 55, 0.5);
-  --color-primary-soft: rgba(255, 111, 55, 0.15);
-  --color-secondary: #FF2A55;
-  --color-secondary-glow: rgba(255, 42, 85, 0.4);
-  --color-accent: #00D4AA;
+  --color-primary: #FF6B35;
+  --color-primary-glow: rgba(255, 107, 53, 0.5);
+  --color-primary-soft: rgba(255, 107, 53, 0.15);
+  --color-secondary: #14F195;
+  --color-secondary-glow: rgba(20, 241, 149, 0.4);
+  --color-accent: #14F195;
   --color-warning: #FFC000;
   --color-danger: #FC1935;
   
@@ -342,6 +342,10 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 2rem;
+  background: linear-gradient(135deg, rgba(5, 0, 15, 0.7) 0%, rgba(10, 5, 20, 0.4) 100%);
+  backdrop-filter: blur(10px);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .hero-badge {
@@ -830,7 +834,9 @@ body {
   padding: 4rem 2rem;
   position: relative;
   z-index: 10;
-  background: linear-gradient(to bottom, transparent, rgba(10, 5, 20, 0.8));
+  background: linear-gradient(to bottom, transparent, rgba(10, 5, 20, 0.95), rgba(10, 5, 20, 0.98));
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .stats-container {
@@ -881,6 +887,9 @@ body {
   padding: 6rem 2rem;
   position: relative;
   z-index: 10;
+  background: linear-gradient(to bottom, rgba(10, 5, 20, 0.9) 0%, rgba(10, 5, 20, 0.95) 50%, rgba(10, 5, 20, 0.98) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .section-header-animated {
@@ -1145,7 +1154,8 @@ body {
   position: relative;
   z-index: 10;
   text-align: center;
-  background: radial-gradient(ellipse at center, rgba(255, 111, 55, 0.1) 0%, transparent 70%);
+  background: linear-gradient(to bottom, rgba(10, 5, 20, 0.9), rgba(10, 5, 20, 0.98));
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .cta-content h2 {
@@ -1171,20 +1181,14 @@ body {
   text-decoration: none;
   font-weight: 700;
   font-size: 1.1rem;
-  border-radius: 100px;
+  border-radius: 8px;
   transition: var(--transition-bounce);
-  box-shadow: 0 10px 40px var(--color-primary-glow);
-  animation: ctaGlow 3s ease-in-out infinite;
-}
-
-@keyframes ctaGlow {
-  0%, 100% { box-shadow: 0 10px 40px var(--color-primary-glow); }
-  50% { box-shadow: 0 10px 60px var(--color-primary-glow), 0 0 30px var(--color-secondary-glow); }
+  box-shadow: 0 4px 20px rgba(255, 111, 55, 0.3);
 }
 
 .btn-cta-large:hover {
-  transform: translateY(-4px) scale(1.03);
-  box-shadow: 0 20px 60px var(--color-primary-glow);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(255, 111, 55, 0.4);
 }
 
 /* Footer */
