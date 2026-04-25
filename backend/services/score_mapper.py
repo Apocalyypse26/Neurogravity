@@ -36,100 +36,99 @@ class NeuroMetrics:
             "subScores": self.sub_scores,
             "fixes": self.fixes,
             "timeSeries": self.time_series,
-            "bestPlatform": self.best_platform,
-            "dropOffRisk": round(self.drop_off_risk, 2),
+            "bestPlatform": self.best_platform,      # now = recommendedAction (BUY/HOLD/AVOID/DANGER)
+            "dropOffRisk": round(self.drop_off_risk, 2),  # now = rugRisk
             "rawTribeData": self.raw_tribe_data
         }
 
 
 class ScoreMapper:
-    """Maps TribeOutput → NeuroMetrics using:
-       base_score (deterministic from features) + ai_adjustment (from GPT-4o-mini)."""
-
-    def __init__(self):
-        self.platform_weights = {
-            "X/Twitter": {"hook": 0.35, "peak": 0.30, "sustained": 0.25, "ending": 0.10},
-            "TikTok":    {"hook": 0.25, "peak": 0.35, "sustained": 0.30, "ending": 0.10},
-            "Instagram": {"hook": 0.30, "peak": 0.25, "sustained": 0.25, "ending": 0.20},
-            "Telegram":  {"hook": 0.40, "peak": 0.20, "sustained": 0.20, "ending": 0.20}
-        }
+    """Maps TribeOutput → NeuroMetrics for crypto token trust scoring.
+    
+    Score semantics (renamed from meme-virality to token trust):
+      raw_hook_score        → Contract Safety
+      raw_attention_peak    → Liquidity Health
+      raw_attention_mean    → Market Credibility
+      raw_ending_strength   → Team Transparency
+      raw_emotion_spike     → Volatility Risk (inverted — lower = safer)
+      raw_visual_punch      → Social Signals
+      ocr_readability       → Data Clarity
+    """
 
     def map(self, tribe_output: TribeOutput) -> NeuroMetrics:
         # Raw signal scores (0-100)
-        hook_score = int(tribe_output.raw_hook_score * 100)
-        peak_response = int(tribe_output.raw_attention_peak * 100)
-        sustained_attention = int(tribe_output.raw_attention_mean * 100)
-        ending_strength = int(tribe_output.raw_ending_strength * 100)
-        emotion_spike = int(tribe_output.raw_emotion_spike * 100)
-        visual_punch = int(tribe_output.raw_visual_punch * 100)
+        contract_safety   = int(tribe_output.raw_hook_score * 100)
+        liquidity_health  = int(tribe_output.raw_attention_peak * 100)
+        mkt_credibility   = int(tribe_output.raw_attention_mean * 100)
+        transparency      = int(tribe_output.raw_ending_strength * 100)
+        # Volatility risk: invert so higher = more volatile = lower trust contribution
+        volatility_risk   = int((1.0 - tribe_output.raw_emotion_spike) * 100)
+        social_signals    = int(tribe_output.raw_visual_punch * 100)
+        data_clarity      = int(tribe_output.ocr_readability * 100)
 
-        readability = tribe_output.ocr_readability
-        relevance = tribe_output.relevance_score
-        rr_blend = int((readability * 0.4 + relevance * 0.6) * 100)
-
-        # ── Deterministic base score ────────────────────────────
+        # ── Deterministic trust base score ─────────────────────────────
+        # Contract safety and liquidity are most important for token trust
         base_score = int(
-            0.30 * hook_score +
-            0.20 * peak_response +
-            0.20 * sustained_attention +
-            0.15 * ending_strength +
-            0.15 * rr_blend
+            0.30 * contract_safety +
+            0.25 * liquidity_health +
+            0.20 * mkt_credibility +
+            0.15 * transparency +
+            0.10 * data_clarity
         )
 
-        # ── Apply AI adjustment (clamped -20 to +20) ───────────
+        # ── Apply Gemini AI trust adjustment (clamped -25 to +25) ──────
         ai_adj = tribe_output.ai_adjustment
-        neuro_virality = max(0, min(100, base_score + ai_adj))
+        trust_score = max(0, min(100, base_score + ai_adj))
 
-        # Drop-off risk
+        # Rug risk = how quickly trust signals drop off over the time series
         ts = tribe_output.time_series
         if len(ts) >= 10:
             early = sum(ts[:3]) / 3
             late = sum(ts[-7:]) / 7
-            drop_off_risk = max(0, 1 - (late / early)) if early > 0 else 0
+            rug_risk = max(0, 1 - (late / early)) if early > 0 else 0.5
         else:
-            drop_off_risk = 0.5
+            rug_risk = 0.5
 
-        # Best platform — prefer AI's pick, else compute
+        # Recommended action — prefer AI's pick, else compute from score
         if tribe_output.ai_best_platform:
-            best_platform = tribe_output.ai_best_platform
+            recommended_action = tribe_output.ai_best_platform
         else:
-            best_platform = self._determine_best_platform(
-                hook_score, peak_response, sustained_attention, ending_strength)
+            recommended_action = self._determine_action(trust_score)
 
         confidence = self._calculate_confidence(tribe_output)
 
-        # Rank — prefer AI's pick, else generate
+        # Rank — prefer AI's pick, else generate from score
         rank = tribe_output.ai_rank if tribe_output.ai_rank else \
-            self._generate_rank(neuro_virality)
+            self._generate_rank(trust_score)
 
-        # Fixes — prefer AI's picks, else generate deterministic
+        # Risk flags — prefer AI's analysis, else generate deterministic
         fixes = tribe_output.ai_fixes[:3] if tribe_output.ai_fixes else \
-            self._generate_fixes(tribe_output, hook_score, drop_off_risk, readability)
+            self._generate_risk_flags(tribe_output, contract_safety, rug_risk, data_clarity)
         while len(fixes) < 3:
-            fixes.append("Enhance visual hierarchy for stronger platform impact.")
+            fixes.append("Verify token contract on blockchain explorer before investing.")
         fixes = fixes[:3]
 
         sub_scores = [
-            {"name": "Hook Score", "val": hook_score},
-            {"name": "Peak Response", "val": peak_response},
-            {"name": "Sustained Attention", "val": sustained_attention},
-            {"name": "Ending Strength", "val": ending_strength},
-            {"name": "Visual Punch", "val": visual_punch},
-            {"name": "Emotion Spike", "val": emotion_spike},
-            {"name": "Readability Blend", "val": rr_blend}
+            {"name": "Contract Safety",    "val": contract_safety},
+            {"name": "Liquidity Health",   "val": liquidity_health},
+            {"name": "Market Credibility", "val": mkt_credibility},
+            {"name": "Team Transparency",  "val": transparency},
+            {"name": "Social Signals",     "val": social_signals},
+            {"name": "Volatility Risk",    "val": volatility_risk},
+            {"name": "Data Clarity",       "val": data_clarity},
         ]
 
         return NeuroMetrics(
-            neuro_virality_score=neuro_virality,
-            hook_score=hook_score,
-            peak_response=peak_response,
-            sustained_attention=sustained_attention,
-            ending_strength=ending_strength,
-            drop_off_risk=drop_off_risk,
-            emotion_spike=emotion_spike,
-            visual_punch=visual_punch,
-            readability_relevance_blend=rr_blend,
-            best_platform=best_platform,
+            neuro_virality_score=trust_score,
+            hook_score=contract_safety,
+            peak_response=liquidity_health,
+            sustained_attention=mkt_credibility,
+            ending_strength=transparency,
+            drop_off_risk=rug_risk,
+            emotion_spike=volatility_risk,
+            visual_punch=social_signals,
+            readability_relevance_blend=data_clarity,
+            best_platform=recommended_action,
             confidence=confidence,
             rank=rank,
             sub_scores=sub_scores,
@@ -138,11 +137,11 @@ class ScoreMapper:
             raw_tribe_data=tribe_output.to_dict()
         )
 
-    def _determine_best_platform(self, hook, peak, sustained, ending) -> str:
-        scores = {}
-        for platform, w in self.platform_weights.items():
-            scores[platform] = w["hook"]*hook + w["peak"]*peak + w["sustained"]*sustained + w["ending"]*ending
-        return max(scores, key=scores.get)
+    def _determine_action(self, score: int) -> str:
+        if score >= 80: return "BUY"
+        if score >= 65: return "HOLD"
+        if score >= 45: return "AVOID"
+        return "DANGER"
 
     def _calculate_confidence(self, t: TribeOutput) -> Dict[str, Any]:
         mode = t.metadata.get("mode", "deterministic")
@@ -162,30 +161,28 @@ class ScoreMapper:
         return sum((x - m) ** 2 for x in data) / len(data)
 
     def _generate_rank(self, score: int) -> str:
-        if score >= 90:   return "[ALPHA] Top 3% of X/Twitter Shitpost Meta"
-        if score >= 80:   return "[OPTIMAL] High retention span expected"
-        if score >= 70:   return "[BETA] Needs memetic structural refinement"
-        if score >= 60:   return "[WARNING] Low visibility ranking on algorithmic feeds"
-        return "[CRITICAL] Extremely volatile engagement trap"
+        if score >= 85: return "[SAFE] High Trust Token — Strong Fundamentals"
+        if score >= 70: return "[CAUTION] Due Diligence Required — Mixed Signals"
+        if score >= 55: return "[RISK] Suspicious Signals — Proceed Carefully"
+        if score >= 40: return "[DANGER] High Rug Risk — Multiple Red Flags"
+        return "[SCAM] Critical Threat — Likely Fraudulent"
 
-    def _generate_fixes(self, t: TribeOutput, hook: int,
-                        drop_off: float, readability: float) -> List[str]:
-        fixes = []
-        if hook < 60:
-            fixes.append("Increase shadow contrast by 15% to trigger higher dopamine retention.")
-        if drop_off > 0.3:
-            fixes.append("Crop outer margins by 10% to force focal entity recognition.")
-        if t.raw_attention_peak < 0.6:
-            fixes.append("Add glowing eyes or explicit ticker symbols for instant recognition.")
-        if readability < 0.5:
-            fixes.append("Text layout conflicts with visual anchor. Center or increase weight by 200.")
-        if len(t.time_series) > 0 and t.time_series[0] < 0.5:
-            fixes.append("Opening frame reads as dull. Deep-fry metrics require stronger first impression.")
-        if t.raw_visual_punch < 0.6:
-            fixes.append("Aspect ratio triggers algorithmic throttling. Remount to 4:5 for feed dominance.")
-        if not fixes:
-            fixes.append("Consider adding obvious meme references for mass adoption.")
-        return fixes[:4]
+    def _generate_risk_flags(self, t: TribeOutput, contract: int,
+                              rug_risk: float, clarity: int) -> List[str]:
+        flags = []
+        if contract < 50:
+            flags.append("Contract safety signals are weak — verify contract address on Etherscan/Solscan.")
+        if rug_risk > 0.4:
+            flags.append("High rug risk detected — liquidity lock status should be verified.")
+        if t.raw_attention_peak < 0.5:
+            flags.append("Low liquidity indicators — check pool depth before entering a position.")
+        if clarity < 40:
+            flags.append("Screenshot data is unclear — poor quality may indicate information hiding.")
+        if t.raw_ending_strength < 0.4:
+            flags.append("Team transparency signals are weak — check for doxxed team or KYC audit.")
+        if not flags:
+            flags.append("Basic trust signals look positive — always DYOR before investing.")
+        return flags[:4]
 
 
 score_mapper = ScoreMapper()

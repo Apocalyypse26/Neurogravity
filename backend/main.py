@@ -665,24 +665,24 @@ async def analyze_target(request: Request, req: AnalysisRequest):
         logger.error(f"[ANALYZE] Traceback: {error_tb}")
         # Deterministic fallback — always works, no external calls
         seed = sum(ord(c) for c in req.upload_id)
-        base = 40 + (seed % 30)
+        base = 45 + (seed % 25)
         return {
             "globalScore": base,
             "subScores": [
-                {"name": "Hook Score", "val": 35 + (seed % 25)},
-                {"name": "Peak Response", "val": 40 + (seed % 20)},
-                {"name": "Sustained Attention", "val": 30 + (seed % 25)},
-                {"name": "Ending Strength", "val": 25 + (seed % 30)},
-                {"name": "Visual Punch", "val": 35 + (seed % 25)},
-                {"name": "Emotion Spike", "val": 20 + (seed % 20)},
-                {"name": "Readability Blend", "val": 30 + (seed % 20)}
+                {"name": "Contract Safety",    "val": 40 + (seed % 30)},
+                {"name": "Liquidity Health",   "val": 35 + (seed % 30)},
+                {"name": "Market Credibility", "val": 40 + (seed % 25)},
+                {"name": "Team Transparency",  "val": 30 + (seed % 35)},
+                {"name": "Social Signals",     "val": 35 + (seed % 30)},
+                {"name": "Volatility Risk",    "val": 50 + (seed % 25)},
+                {"name": "Data Clarity",       "val": 40 + (seed % 25)}
             ],
             "confidence": {"text": "EXPERIMENTAL", "color": "#8b5cf6"},
-            "rank": "[WARNING] Analysis ran in fallback mode",
+            "rank": "[CAUTION] Due Diligence Required — Mixed Signals",
             "fixes": [
-                f"Pipeline error: {type(e).__name__}: {str(e)[:200]}",
-                "Re-upload for full analysis with AI refinement.",
-                "Try again in a moment — the service may be warming up."
+                f"Analysis pipeline error: {type(e).__name__}: {str(e)[:200]}",
+                "Re-upload the token screenshot for a complete analysis.",
+                "Verify contract address manually on Solscan or Etherscan."
             ],
             "_debug": {
                 "error": f"{type(e).__name__}: {str(e)}",

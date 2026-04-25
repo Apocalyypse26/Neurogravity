@@ -4,7 +4,6 @@ import logging
 import json
 import re
 from typing import Dict, List, Any
-from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
 logger = logging.getLogger("neurox.tribe")
@@ -52,9 +51,20 @@ def is_url_safe(url: str) -> bool:
         return False
 
 
-# Initialize OpenAI if API key is available
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_CLIENT = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+# Initialize Gemini if API key is available
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_CLIENT = None
+
+if GEMINI_API_KEY:
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        GEMINI_CLIENT = genai.GenerativeModel("gemini-1.5-flash")
+        logger.info("[TRIBE] Gemini client initialized successfully")
+    except ImportError:
+        logger.warning("[TRIBE] google-generativeai not installed. Run: pip install google-generativeai")
+    except Exception as e:
+        logger.warning("[TRIBE] Gemini client init failed: %s", e)
 
 
 def seeded_random(seed: int, offset: int) -> float:
@@ -112,7 +122,7 @@ class TribeOutput:
 
 
 class TribeService:
-    """Hybrid analysis: deterministic PIL features + optional GPT-4o-mini refinement (text-only)."""
+    """Hybrid analysis: deterministic PIL visual features + Gemini AI crypto trust refinement."""
 
     def __init__(self):
         self.use_real = USE_REAL_TRIBE
@@ -123,27 +133,27 @@ class TribeService:
         features = features or {}
         signals = self._compute_signals(features, media_type)
 
-        # AI refinement (text-only, no image sent)
-        if OPENAI_CLIENT and self.use_real:
+        # Gemini AI refinement for crypto token trust analysis
+        if GEMINI_CLIENT and self.use_real:
             try:
-                ai = await self._get_ai_refinement(features, ocr_text, media_type, signals)
-                signals["ai_adjustment"] = ai.get("score_adjustment", 0)
-                signals["ai_reasoning"] = ai.get("reasoning", "")
-                signals["ai_fixes"] = ai.get("fixes", [])
-                signals["ai_best_platform"] = ai.get("best_platform", "X/Twitter")
+                ai = await self._get_ai_trust_analysis(features, ocr_text, media_type, signals)
+                signals["ai_adjustment"] = ai.get("trust_adjustment", 0)
+                signals["ai_reasoning"] = ai.get("signal_summary", "")
+                signals["ai_fixes"] = ai.get("risk_flags", [])
+                signals["ai_best_platform"] = ai.get("recommended_action", "HOLD")
                 signals["ai_rank"] = ai.get("rank", "")
                 signals["mode"] = "hybrid_ai"
-                logger.info("[TRIBE] AI refinement: adjustment=%d", signals["ai_adjustment"])
+                logger.info("[TRIBE] Gemini trust analysis: adjustment=%d", signals["ai_adjustment"])
             except Exception as e:
-                logger.warning("[TRIBE] AI refinement failed, deterministic only: %s", e)
+                logger.warning("[TRIBE] Gemini analysis failed, using deterministic: %s", e)
                 signals["mode"] = "deterministic"
         else:
             signals["mode"] = "deterministic"
-            logger.info("[TRIBE] Deterministic analysis (no AI)")
+            logger.info("[TRIBE] Deterministic analysis (no AI or USE_REAL_TRIBE=false)")
 
         return self._build_output(signals, features, media_type, seed, ocr_text)
 
-    # ── Deterministic Scoring ───────────────────────────────────────
+    # ── Deterministic Scoring (based on visual features of token screenshots) ─
 
     def _compute_signals(self, f: Dict, media_type: str) -> Dict[str, Any]:
         brightness = f.get("brightness", 0.5)
@@ -155,135 +165,165 @@ class TribeService:
         text_density = f.get("text_density", 0.0)
         color_variety = f.get("color_variety", 0.5)
         hook_strength = f.get("hook_strength", "medium")
-        aspect_ratio = f.get("aspect_ratio", "1:1")
 
-        # Scoring curves optimized for viral characteristics
-        brightness_s = max(0, min(1, 1.0 - 2.0 * abs(brightness - 0.55)))
-        contrast_s = min(contrast / 0.7, 1.0)
-        saturation_s = min(saturation / 0.6, 1.0)
-        edge_s = max(0, min(1, 1.0 - 2.0 * abs(edge_density - 0.35)))
-        complexity_s = max(0, min(1, 1.0 - 2.0 * abs(complexity - 0.65)))
+        # For crypto token screenshots: text-heavy, dark-mode, moderate complexity = high trust signals
+        # A legitimate token dashboard typically has:
+        # - Dark background (professional UI)
+        # - High text density (charts, numbers, addresses)
+        # - Moderate-high contrast (readable data)
+        # - Moderate complexity (structured layout, not chaos)
 
-        text_s = 0.3
+        # Contract safety signal: high contrast + text = structured data visible
+        contract_s = min((contrast / 0.6) * 0.6 + (text_density * 0.4 if text_detected else 0.1), 1.0)
+
+        # Liquidity health: well-lit, clear data visualization
+        liquidity_s = max(0, min(1, 1.0 - 2.0 * abs(brightness - 0.45)))
+
+        # Market credibility: text density + complexity (charts, tables)
+        credibility_s = 0.4
         if text_detected:
-            text_s = 0.6 + text_density * 0.4
-            if f.get("text_position") == "top":
-                text_s = min(text_s + 0.15, 1.0)
+            credibility_s = 0.5 + text_density * 0.5
+        credibility_s = min(credibility_s, 1.0)
 
-        aspect_map = {"1:1": 0.9, "4:5": 1.0, "9:16": 0.85, "16:9": 0.7,
-                      "4:3": 0.75, "portrait": 0.8, "landscape": 0.65}
-        aspect_s = aspect_map.get(aspect_ratio, 0.7)
-        color_s = max(0, min(1, 1.0 - 2.0 * abs(color_variety - 0.5)))
-        hook_map = {"strong": 0.9, "medium": 0.6, "weak": 0.3}
-        hook_s = hook_map.get(hook_strength, 0.6)
+        # Team transparency: image complexity (more structured data = more info disclosed)
+        transparency_s = max(0, min(1, 1.0 - 2.0 * abs(complexity - 0.70)))
+
+        # Social signals: color variety (branded token materials)
+        social_s = max(0, min(1, 1.0 - 2.0 * abs(color_variety - 0.45)))
+
+        # Volatility risk: extreme saturation or deep-fried = suspicious
+        is_deep_fried = f.get("is_deep_fried", False)
+        volatility_s = max(0, 1.0 - (saturation * 0.5) - (0.3 if is_deep_fried else 0))
+
+        # Data clarity: edge density in readable range
+        edge_s = max(0, min(1, 1.0 - 2.0 * abs(edge_density - 0.30)))
+
+        hook_map = {"strong": 0.85, "medium": 0.65, "weak": 0.40}
+        hook_s = hook_map.get(hook_strength, 0.65)
 
         return {
-            "brightness_score": round(brightness_s, 3),
-            "contrast_score": round(contrast_s, 3),
-            "saturation_score": round(saturation_s, 3),
-            "edge_score": round(edge_s, 3),
-            "complexity_score": round(complexity_s, 3),
-            "text_score": round(text_s, 3),
-            "aspect_score": round(aspect_s, 3),
-            "color_score": round(color_s, 3),
+            "contract_score": round(contract_s, 3),
+            "liquidity_score": round(liquidity_s, 3),
+            "credibility_score": round(credibility_s, 3),
+            "transparency_score": round(transparency_s, 3),
+            "social_score": round(social_s, 3),
+            "volatility_score": round(volatility_s, 3),
+            "clarity_score": round(edge_s, 3),
             "hook_score": round(hook_s, 3),
             "ai_adjustment": 0, "ai_reasoning": "", "ai_fixes": [],
             "ai_best_platform": "", "ai_rank": "",
         }
 
-    # ── AI Refinement (text-only, ~$0.0002/call) ───────────────────
+    # ── Gemini AI Trust Analysis ─────────────────────────────────────
 
-    async def _get_ai_refinement(self, features: Dict, ocr_text: str,
-                                  media_type: str, signals: Dict) -> Dict[str, Any]:
-        report = self._build_feature_report(features, ocr_text, media_type, signals)
+    async def _get_ai_trust_analysis(self, features: Dict, ocr_text: str,
+                                      media_type: str, signals: Dict) -> Dict[str, Any]:
+        report = self._build_token_report(features, ocr_text, media_type, signals)
 
-        prompt = f"""You are a viral content analyst for social media. Based on these image features, provide a scoring refinement.
+        prompt = f"""You are NEUROX, an expert crypto token security analyst. Analyze this token screenshot data and provide a trust assessment.
 
 {report}
 
-Respond ONLY with valid JSON (no markdown):
-{{"score_adjustment": <int -20 to +20>, "reasoning": "<1-2 sentences>", "fixes": ["<fix1>", "<fix2>", "<fix3>"], "best_platform": "<X/Twitter|TikTok|Instagram|Telegram>", "rank": "<one of the ranks below>"}}
+Analyze for: contract legitimacy, liquidity health, rugpull risk, team transparency, and overall token safety.
 
-Ranks: "[ALPHA] Top 3% of X/Twitter Shitpost Meta", "[OPTIMAL] High retention span expected", "[BETA] Needs memetic structural refinement", "[WARNING] Low visibility ranking on algorithmic feeds", "[CRITICAL] Extremely volatile engagement trap"
+Respond ONLY with valid JSON (no markdown, no extra text):
+{{"trust_adjustment": <int -25 to +25>, "signal_summary": "<2-3 sentence analysis of the token's trust signals>", "risk_flags": ["<specific risk or positive signal 1>", "<risk or signal 2>", "<risk or signal 3>"], "recommended_action": "<BUY|HOLD|AVOID|DANGER>", "rank": "<one of the ranks below>"}}
+
+Ranks (pick exactly one):
+"[SAFE] High Trust Token — Strong Fundamentals"
+"[CAUTION] Due Diligence Required — Mixed Signals"
+"[RISK] Suspicious Signals — Proceed Carefully"
+"[DANGER] High Rug Risk — Multiple Red Flags"
+"[SCAM] Critical Threat — Likely Fraudulent"
 """
+        logger.info("[TRIBE] Sending token data to Gemini for trust analysis...")
 
-        response = await OPENAI_CLIENT.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
-            temperature=0.4
+        import asyncio
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: GEMINI_CLIENT.generate_content(prompt)
         )
-        text = response.choices[0].message.content.strip()
-        logger.info("[TRIBE] AI response: %s", text[:200])
+        text = response.text.strip()
+        logger.info("[TRIBE] Gemini response: %s", text[:300])
+
+        # Strip markdown code fences if present
+        text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'\s*```$', '', text, flags=re.MULTILINE)
+        text = text.strip()
 
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
             result = json.loads(match.group())
-            result["score_adjustment"] = max(-20, min(20, int(result.get("score_adjustment", 0))))
+            result["trust_adjustment"] = max(-25, min(25, int(result.get("trust_adjustment", 0))))
             return result
 
-        logger.warning("[TRIBE] Failed to parse AI JSON")
-        return {"score_adjustment": 0, "reasoning": "", "fixes": [],
-                "best_platform": "X/Twitter",
-                "rank": "[BETA] Needs memetic structural refinement"}
+        logger.warning("[TRIBE] Failed to parse Gemini JSON response")
+        return {
+            "trust_adjustment": 0,
+            "signal_summary": "Analysis completed with limited data.",
+            "risk_flags": ["Insufficient data for full analysis.", "Manual review recommended.", "Verify contract on-chain."],
+            "recommended_action": "HOLD",
+            "rank": "[CAUTION] Due Diligence Required — Mixed Signals"
+        }
 
-    def _build_feature_report(self, f: Dict, ocr_text: str,
-                               media_type: str, signals: Dict) -> str:
+    def _build_token_report(self, f: Dict, ocr_text: str,
+                             media_type: str, signals: Dict) -> str:
         lines = [
-            f"Media: {media_type}",
+            f"Content type: {media_type} (crypto token screenshot)",
             f"Resolution: {f.get('resolution', '?')}",
-            f"Aspect ratio: {f.get('aspect_ratio', '?')}",
-            f"Brightness: {f.get('brightness',0):.0%} ({f.get('brightness_label','?')})",
-            f"Contrast: {f.get('contrast',0):.0%} ({f.get('contrast_label','?')})",
-            f"Saturation: {f.get('saturation',0):.0%} ({f.get('saturation_label','?')})",
-            f"Edge density: {f.get('edge_density',0):.0%}",
-            f"Complexity: {f.get('image_complexity',0):.0%} ({f.get('complexity_label','?')})",
-            f"Colors: {', '.join(f.get('dominant_colors',['?'])[:4])}",
-            f"Color variety: {f.get('color_variety',0):.0%}",
+            f"UI Mode: {'Dark Mode (professional)' if f.get('is_dark_mode') else 'Light Mode'}",
+            f"Brightness: {f.get('brightness', 0):.0%} ({f.get('brightness_label', '?')})",
+            f"Contrast: {f.get('contrast', 0):.0%} ({f.get('contrast_label', '?')})",
+            f"Saturation: {f.get('saturation', 0):.0%} ({f.get('saturation_label', '?')})",
+            f"Image complexity: {f.get('image_complexity', 0):.0%} ({f.get('complexity_label', '?')})",
             f"Text detected: {'Yes' if f.get('text_detected') else 'No'}",
         ]
         if f.get("text_detected"):
-            lines.append(f"Text density: {f.get('text_density',0):.0%}")
-            lines.append(f"Text position: {f.get('text_position','?')}")
+            lines.append(f"Text density: {f.get('text_density', 0):.0%}")
+            lines.append(f"Text position: {f.get('text_position', '?')}")
         lines += [
-            f"Dark mode: {'Yes' if f.get('is_dark_mode') else 'No'}",
-            f"Deep-fried: {'Yes' if f.get('is_deep_fried') else 'No'}",
-            f"Hook strength: {f.get('hook_strength','?')}",
-            f"Visual weight: {f.get('visual_weight','?')}",
+            f"Appears deep-fried/manipulated: {'Yes — SUSPICIOUS' if f.get('is_deep_fried') else 'No'}",
+            f"Color variety: {f.get('color_variety', 0):.0%}",
+            f"Dominant colors: {', '.join(f.get('dominant_colors', ['?'])[:4])}",
+            f"Visual weight: {f.get('visual_weight', '?')}",
         ]
         if ocr_text and "[no significant" not in ocr_text:
-            lines.append(f"Text hint: {ocr_text}")
-        lines.append(f"\nBase scores: hook={signals.get('hook_score',0):.0%} "
-                     f"contrast={signals.get('contrast_score',0):.0%} "
-                     f"saturation={signals.get('saturation_score',0):.0%}")
+            lines.append(f"\nExtracted text from screenshot:\n{ocr_text[:800]}")
+        lines.append(
+            f"\nBase deterministic scores: "
+            f"contract={signals.get('contract_score', 0):.0%} "
+            f"liquidity={signals.get('liquidity_score', 0):.0%} "
+            f"credibility={signals.get('credibility_score', 0):.0%}"
+        )
         return "\n".join(lines)
 
-    # ── Build Output ────────────────────────────────────────────────
+    # ── Build Output ─────────────────────────────────────────────────
 
     def _build_output(self, signals: Dict, features: Dict,
                       media_type: str, seed: int, ocr_text: str) -> TribeOutput:
         num_frames = 30 if media_type == "image" else 60
         hook = signals["hook_score"]
-        base = 0.3 + hook * 0.4
+        base = 0.35 + hook * 0.40
 
         time_series = []
         for i in range(num_frames):
             progress = i / num_frames
-            hook_boost = (3 - i) * 0.1 * hook if i < 3 else 0
-            decay = 1 - (progress * 0.25)
-            noise = math.sin(seed + i * 0.7) * 0.05
-            ending = signals["contrast_score"] * 0.05 if i > num_frames * 0.75 else 0
+            hook_boost = (3 - i) * 0.08 * hook if i < 3 else 0
+            decay = 1 - (progress * 0.20)
+            noise = math.sin(seed + i * 0.7) * 0.04
+            ending = signals["contract_score"] * 0.04 if i > num_frames * 0.75 else 0
             val = min(max(base + hook_boost + noise + ending, 0), 1) * decay
             time_series.append(round(val, 4))
 
-        raw_hook = sum(time_series[:3]) / 3 if len(time_series) >= 3 else time_series[0]
-        raw_peak = max(time_series)
-        raw_mean = sum(time_series) / len(time_series)
-        raw_ending = sum(time_series[-10:]) / 10 if len(time_series) >= 10 else raw_mean
-        spikes = [time_series[i] - time_series[i-1] for i in range(1, len(time_series))
-                  if time_series[i] - time_series[i-1] > 0.03]
-        raw_emotion = max(spikes) if spikes else 0
-        raw_vp = signals["contrast_score"] * 0.4 + signals["saturation_score"] * 0.3 + signals["color_score"] * 0.3
+        # Map to raw scores for score_mapper
+        raw_hook = signals["contract_score"]           # → Contract Safety
+        raw_peak = signals["liquidity_score"]          # → Liquidity Health
+        raw_mean = signals["credibility_score"]        # → Market Credibility
+        raw_ending = signals["transparency_score"]     # → Team Transparency
+        raw_emotion = signals["volatility_score"]      # → Volatility Risk
+        raw_vp = signals["social_score"]               # → Social Signals
+        ocr_readability = signals["clarity_score"]     # → Data Clarity
 
         compact_meta = {k: v for k, v in features.items()
                         if k not in ("region_edge_scores", "dominant_colors")}
@@ -297,8 +337,8 @@ Ranks: "[ALPHA] Top 3% of X/Twitter Shitpost Meta", "[OPTIMAL] High retention sp
             raw_emotion_spike=raw_emotion,
             raw_visual_punch=raw_vp,
             ocr_text=ocr_text,
-            ocr_readability=features.get("text_density", 0.0) if features.get("text_detected") else 0.0,
-            relevance_score=signals.get("text_score", 0.5),
+            ocr_readability=ocr_readability,
+            relevance_score=signals.get("hook_score", 0.65),
             metadata={
                 "media_type": media_type, "num_frames": num_frames,
                 "seed": seed, "mode": signals.get("mode", "deterministic"),

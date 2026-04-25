@@ -133,11 +133,16 @@ export default function ResultsView({ session }) {
 
       if (data) {
         setUpload(data)
-        // Always clear old cached results and run a fresh analysis
-        // so the user always gets live, up-to-date scan results
-        console.log('[ResultsView] Clearing old score_data and running fresh analysis...');
-        await supabase.from('uploads').update({ score_data: null }).eq('id', uploadId);
-        await executeAnalysisHook(data)
+        // Only run fresh analysis if no valid score_data exists
+        if (data.score_data && data.score_data.globalScore !== undefined && !data.score_data._debug) {
+          console.log('[ResultsView] Using existing valid score_data');
+          const normalized = normalizeScoreData(data.score_data)
+          setAnalysisData(normalized)
+          setLoading(false)
+        } else {
+          console.log('[ResultsView] No valid score_data — running fresh analysis...');
+          await executeAnalysisHook(data)
+        }
       } else {
         setLoading(false)
       }
@@ -164,10 +169,10 @@ export default function ResultsView({ session }) {
 
   const executeAnalysisHook = useCallback(async (targetData) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://neurox-api.onrender.com';
       setAnalysisStatus('analyzing');
 
-      const { data: { session } } = await supabase.auth.getSession();
+      // Use session prop directly — avoids extra async call
       const userId = session?.user?.id || 'anonymous';
 
       const requestBody = JSON.stringify({
@@ -418,7 +423,7 @@ export default function ResultsView({ session }) {
   }
 
   const { globalScore, confidence, subScores, rank, fixes, bestPlatform, dropOffRisk } = analysisData
-  const scoreColor = globalScore > 85 ? 'var(--color-primary)' : globalScore > 70 ? 'var(--color-warning)' : 'var(--color-danger)'
+  const scoreColor = globalScore >= 75 ? 'var(--color-primary)' : globalScore >= 50 ? 'var(--color-warning)' : 'var(--color-danger)'
   const dropOffColor = dropOffRisk > 0.5 ? 'var(--color-danger)' : dropOffRisk > 0.3 ? 'var(--color-warning)' : 'var(--color-accent)'
 
   return (
@@ -521,7 +526,7 @@ export default function ResultsView({ session }) {
           <div className="analysis-column">
             {/* Main Score */}
             <div className="score-card-main liquid-glass" style={{ '--score-color': scoreColor }}>
-              <div className="score-label">NEURO VIRALITY SCORE</div>
+              <div className="score-label">TRUST SCORE</div>
               <div className="score-display">
                 <span className="score-number">
                   <AnimatedScore score={globalScore} color={scoreColor} />
@@ -535,20 +540,24 @@ export default function ResultsView({ session }) {
               {bestPlatform && (
                 <div className="platform-recommendation">
                   <BarChart3 size={14} />
-                  <span>Best: <strong>{bestPlatform}</strong></span>
+                  <span>Action: <strong style={{ 
+                    color: bestPlatform === 'BUY' ? '#10b981' : 
+                           bestPlatform === 'HOLD' ? '#f59e0b' : 
+                           bestPlatform === 'AVOID' ? '#f97316' : '#ef4444' 
+                  }}>{bestPlatform}</strong></span>
                 </div>
               )}
               {dropOffRisk !== undefined && (
                 <div className="dropoff-risk" style={{ color: dropOffColor }}>
                   <Activity size={14} />
-                  <span>Drop-off Risk: {(dropOffRisk * 100).toFixed(0)}%</span>
+                  <span>Rug Risk: {(dropOffRisk * 100).toFixed(0)}%</span>
                 </div>
               )}
             </div>
 
             {/* Sub-scores */}
             <div className="subscores-card liquid-glass">
-              <h3 className="card-title">Sub-Routine Metrics</h3>
+              <h3 className="card-title">Trust Metrics</h3>
               <div className="subscores-list">
                 {subScores.map((score, i) => (
                   <ProgressBar 
@@ -566,7 +575,7 @@ export default function ResultsView({ session }) {
             <div className="directives-card liquid-glass">
               <h3 className="card-title">
                 <AlertTriangle size={18} className="warning-icon" />
-                Actionable Directives
+                Risk Signals
               </h3>
               <div className="directives-list">
                 {fixes.map((fix, i) => (
