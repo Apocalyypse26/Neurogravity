@@ -31,7 +31,7 @@ services:
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: GEMINI_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
       - key: JOB_CLEANUP_INTERVAL_SECONDS
         value: 300

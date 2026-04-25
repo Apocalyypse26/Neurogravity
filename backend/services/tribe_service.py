@@ -51,20 +51,19 @@ def is_url_safe(url: str) -> bool:
         return False
 
 
-# Initialize Gemini if API key is available
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_CLIENT = None
+# Initialize OpenAI if API key is available
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_CLIENT = None
 
-if GEMINI_API_KEY:
+if OPENAI_API_KEY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        GEMINI_CLIENT = genai.GenerativeModel("gemini-1.5-flash")
-        logger.info("[TRIBE] Gemini client initialized successfully")
+        from openai import OpenAI
+        OPENAI_CLIENT = OpenAI(api_key=OPENAI_API_KEY)
+        logger.info("[TRIBE] OpenAI client initialized successfully")
     except ImportError:
-        logger.warning("[TRIBE] google-generativeai not installed. Run: pip install google-generativeai")
+        logger.warning("[TRIBE] openai not installed. Run: pip install openai")
     except Exception as e:
-        logger.warning("[TRIBE] Gemini client init failed: %s", e)
+        logger.warning("[TRIBE] OpenAI client init failed: %s", e)
 
 
 def seeded_random(seed: int, offset: int) -> float:
@@ -214,7 +213,7 @@ class TribeService:
             "ai_best_platform": "", "ai_rank": "",
         }
 
-    # ── Gemini AI Trust Analysis ─────────────────────────────────────
+    # ── OpenAI AI Trust Analysis ─────────────────────────────────────
 
     async def _get_ai_trust_analysis(self, features: Dict, ocr_text: str,
                                       media_type: str, signals: Dict) -> Dict[str, Any]:
@@ -236,16 +235,23 @@ Ranks (pick exactly one):
 "[DANGER] High Rug Risk — Multiple Red Flags"
 "[SCAM] Critical Threat — Likely Fraudulent"
 """
-        logger.info("[TRIBE] Sending token data to Gemini for trust analysis...")
+        logger.info("[TRIBE] Sending token data to OpenAI for trust analysis...")
 
-        import asyncio
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: GEMINI_CLIENT.generate_content(prompt)
-        )
-        text = response.text.strip()
-        logger.info("[TRIBE] Gemini response: %s", text[:300])
+        try:
+            response = OPENAI_CLIENT.chat.completions.create(
+                model="gpt-4o-mini",  # Fast and effective for structured analysis
+                messages=[
+                    {"role": "system", "content": "You are NEUROX, an expert crypto token security analyst."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+            text = response.choices[0].message.content.strip()
+            logger.info("[TRIBE] OpenAI response: %s", text[:300])
+        except Exception as e:
+            logger.error("[TRIBE] OpenAI API call failed: %s", e)
+            text = "{}"
 
         # Strip markdown code fences if present
         text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
@@ -258,7 +264,7 @@ Ranks (pick exactly one):
             result["trust_adjustment"] = max(-25, min(25, int(result.get("trust_adjustment", 0))))
             return result
 
-        logger.warning("[TRIBE] Failed to parse Gemini JSON response")
+        logger.warning("[TRIBE] Failed to parse OpenAI JSON response")
         return {
             "trust_adjustment": 0,
             "signal_summary": "Analysis completed with limited data.",

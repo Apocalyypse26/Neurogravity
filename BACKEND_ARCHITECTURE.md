@@ -4,7 +4,7 @@ This document provides a comprehensive overview of the NEUROX backend system, a 
 
 ## 🚀 Core Technology Stack
 - **Framework**: FastAPI (Python 3.11+)
-- **AI Engine**: Gemini 1.5 Flash (via `google-generativeai`)
+- **AI Engine**: OpenAI GPT-4o-mini (via `openai`)
 - **Image Processing**: PIL (Pillow) for deterministic feature extraction
 - **Database**: Supabase (PostgreSQL) for persistence and storage
 - **Authentication**: Supabase JWT (Bearer Token)
@@ -30,7 +30,7 @@ Orchestrates the asynchronous analysis pipeline.
 The primary analysis engine, now specialized for **Crypto Token Trust Assessment**.
 - **Hybrid Pipeline**:
     - **Deterministic**: PIL-based analysis of visual features (contrast, complexity, text density, color variety).
-    - **AI Refinement**: Uses **Gemini 1.5 Flash** to analyze extracted OCR text and visual metadata for trust signals (contract legitimacy, liquidity depth, rugpull risks).
+    - **AI Refinement**: Uses **OpenAI GPT-4o-mini** to analyze extracted OCR text and visual metadata for trust signals (contract legitimacy, liquidity depth, rugpull risks).
 - **Output**: Generates raw signals for contract safety, liquidity health, and market credibility.
 
 ### 4. Score Mapper (`services/score_mapper.py`)
@@ -58,7 +58,7 @@ Translates raw TRIBE signals into user-friendly NEUROX metrics.
 4. **OCR**: Text is extracted from the image.
 5. **TRIBE Analysis**: 
     - Deterministic scores are calculated.
-    - OCR data is sent to Gemini AI for a "Deep Scan" of trust signals.
+    - OCR data is sent to OpenAI AI for a "Deep Scan" of trust signals.
 6. **Mapping**: Raw data is converted into the final `TRUST SCORE` format.
 7. **Completion**: Job status is updated to `COMPLETED`, and results are pushed to the database.
 
