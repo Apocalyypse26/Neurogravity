@@ -111,6 +111,7 @@ async function getClipEmbedding(imageBuffer) {
     headers: {
       Authorization: `Bearer ${HF_API_KEY}`,
       "Content-Type": "application/octet-stream",
+      "X-Wait-For-Model": "true", // Crucial: tells HF to wait for the model to wake up
     },
     body: imageBuffer,
   });
