@@ -18,7 +18,7 @@ RUN npm ci
 
 COPY . .
 
-RUN npm run build
+# No build step required for ES Modules
 
 FROM base AS runner
 
