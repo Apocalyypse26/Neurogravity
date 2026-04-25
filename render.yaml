@@ -9,6 +9,7 @@ services:
     repo: https://github.com/Apocalyypse26/NEUROX.git
     branch: main
     rootDir: neurox-backend
+    env: node
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
