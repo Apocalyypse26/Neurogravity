@@ -40,9 +40,25 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 0
-      ? allowedOrigins
-      : false, // false = same-origin only in production if no whitelist
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      
+      const allowedPatterns = [
+        /localhost/,
+        /vercel\.app$/,
+        /neuroxscan\.fun$/,
+        /neurogravity\.ai$/
+      ];
+
+      const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] Blocked origin: ${origin}`);
+        callback(null, false);
+      }
+    },
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
