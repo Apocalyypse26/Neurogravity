@@ -118,18 +118,6 @@ export default function ResultsView({ session }) {
   const videoRef = useRef(null)
   const timelineRef = useRef(null)
 
-  useEffect(() => {
-    fetchUpload()
-    setMounted(true)
-    
-    return () => {
-      if (sseRef.current) {
-        sseRef.current.close();
-        sseRef.current = null;
-      }
-    };
-  }, [uploadId, fetchUpload])
-
   const fetchUpload = useCallback(async () => {
     console.log('[ResultsView] Fetching upload:', uploadId);
     try {
@@ -171,23 +159,20 @@ export default function ResultsView({ session }) {
       setLoading(false);
     }
   }, [uploadId])
-  
-  const normalizeScoreData = (data) => {
-    if (!data) return null
-    // If already camelCase, return as-is
-    if (data.globalScore !== undefined) return data
+
+  useEffect(() => {
+    fetchUpload()
+    setMounted(true)
     
-    // Convert snake_case to camelCase
-    return {
-      globalScore: data.global_score,
-      subScores: data.sub_scores,
-      confidence: data.confidence,
-      rank: data.rank,
-      fixes: data.fixes,
-      bestPlatform: data.best_platform,
-      dropOffRisk: data.drop_off_risk
-    }
-  }
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [uploadId, fetchUpload])
+  
+  // normalizeScoreData is defined at module level above the component
 
   const executeAnalysisHook = useCallback(async (targetData) => {
     try {
