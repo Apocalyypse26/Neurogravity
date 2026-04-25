@@ -1,63 +1,41 @@
 # Render Blueprint - NEUROX Deployment
-# Deploy both backend and frontend services
+# Deploying the Finalized v2.5 Node.js Backend
 
 services:
-  # Backend API Service
+  # Backend API Service (Node.js v2.5)
   - type: web
     name: neurox-api
     region: oregon
     repo: https://github.com/Apocalyypse26/NEUROX.git
     branch: main
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    rootDir: neurox-backend
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /api/health
     envVars:
-      - key: USE_REAL_TRIBE
-        value: true
-      - key: ENVIRONMENT
+      - key: NODE_ENV
         value: production
-      - key: CORS_ORIGINS
+      - key: PORT
+        value: 3000
+      - key: ALLOWED_ORIGINS
         value: https://www.neuroxscan.fun,https://neurogravity.vercel.app,https://neuroxscan.fun
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: OPENAI_API_KEY
         sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: SUPABASE_JWT_SECRET
+      - key: HUGGINGFACE_API_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: UPSTASH_REDIS_REST_URL
         sync: false
-      - key: JOB_CLEANUP_INTERVAL_SECONDS
-        value: 300
-      - key: MAX_JOB_AGE_SECONDS
-        value: 3600
-
-# Uncomment below to deploy frontend as static site on Render
-# For production, Vercel is recommended for frontend
-# 
-#  - type: web
-#    name: neurox-frontend
-#    region: oregon
-#    repo: https://github.com/Apocalyypse26/Neurogravity.git
-#    branch: main
-#    buildCommand: npm install && npm run build
-#    staticPublishPath: dist
-#    headers:
-#      - path: /*
-#        name: Cache-Control
-#        value: public, max-age=0, must-revalidate
-#    envVars:
-#      - key: VITE_API_URL
-#        sync: false
-#      - key: VITE_SUPABASE_URL
-#        sync: false
-#      - key: VITE_SUPABASE_ANON_KEY
-#        sync: false
-#      - key: NODE_VERSION
-#        value: 18
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: CLOUDFLARE_R2_ACCESS_KEY
+        sync: false
+      - key: CLOUDFLARE_R2_SECRET_KEY
+        sync: false
+      - key: CLOUDFLARE_R2_ENDPOINT
+        sync: false
+      - key: CLOUDFLARE_R2_BUCKET
+        sync: false

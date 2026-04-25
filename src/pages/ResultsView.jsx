@@ -45,15 +45,51 @@ const AnimatedScore = ({ score, maxScore = 100, color }) => {
 
 const normalizeScoreData = (data) => {
     if (!data) return null
+    
+    // v2.5 Node.js Backend Format Mapping
+    if (data.trust_score !== undefined) {
+      const getScoreColor = (score) => {
+        if (score >= 80) return '#00ffaa' // Neon Green
+        if (score >= 60) return '#ffcc00' // Yellow
+        if (score >= 40) return '#ff8800' // Orange
+        return '#ff4444' // Red
+      }
+
+      // Map Node.js scores object to the subScores array expected by the UI
+      const subScoresMap = [
+        { name: 'Scam Protection', val: 100 - (data.scores?.scam_risk || 50) },
+        { name: 'Launch Quality', val: data.scores?.launch_quality || 50 },
+        { name: 'Brand Integrity', val: data.scores?.brand_originality || 50 },
+        { name: 'Visual Flow', val: data.scores?.visual_consistency || 50 },
+        { name: 'Claim Trust', val: data.scores?.claim_credibility || 50 },
+        { name: 'Hype Control', val: 100 - (data.scores?.hype_manipulation || 50) }
+      ]
+
+      return {
+        globalScore: data.trust_score,
+        subScores: subScoresMap,
+        confidence: {
+          text: data.risk_level?.toUpperCase() || 'UNVERIFIED',
+          color: getScoreColor(data.trust_score)
+        },
+        rank: data.verdict || 'ANALYZED',
+        fixes: data.flags || [],
+        bestPlatform: data.recommendation || 'MONITOR',
+        dropOffRisk: Math.max(0, (100 - data.trust_score) / 100),
+        v2: true // flag for v2 data
+      }
+    }
+
+    // Legacy/Fallback formats
     if (data.globalScore !== undefined) return data
     return {
-      globalScore: data.global_score,
-      subScores: data.sub_scores,
-      confidence: data.confidence,
-      rank: data.rank,
-      fixes: data.fixes,
-      bestPlatform: data.best_platform,
-      dropOffRisk: data.drop_off_risk
+      globalScore: data.global_score || 0,
+      subScores: data.sub_scores || [],
+      confidence: data.confidence || { text: 'PENDING', color: '#888' },
+      rank: data.rank || 'N/A',
+      fixes: data.fixes || [],
+      bestPlatform: data.best_platform || 'N/A',
+      dropOffRisk: data.drop_off_risk || 0
     }
   }
 

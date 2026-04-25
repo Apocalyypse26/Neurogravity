@@ -248,6 +248,56 @@ router.get("/history", createCache({ ttl: 60 }), validateSync(scanHistoryQuerySc
   }
 });
 
+// ═══════════════════════════════════════════════════════
+// POST /api/analyze (Compatibility Wrapper)
+// Accepts JSON body { "upload_id": "...", "file_url": "...", "user_id": "..." }
+// ═══════════════════════════════════════════════════════
+router.post("/analyze", standardLimiter, async (req, res) => {
+  try {
+    const { upload_id, file_url, user_id } = req.body;
+
+    if (!file_url) {
+      return res.status(400).json({ error: "Missing 'file_url' in request body" });
+    }
+
+    console.log(`[COMPAT] Analysis requested for upload: ${upload_id} — url: ${file_url}`);
+
+    // Fetch the image from the URL
+    const response = await fetch(file_url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Run the pipeline
+    const result = await processScanJob({
+      data: {
+        imageBase64: buffer.toString("base64"),
+        mimeType: response.headers.get("content-type") || "image/png",
+        originalSize: buffer.length,
+        inputType: "image",
+        inputUrl: file_url,
+        extraBuffersBase64: [],
+      },
+    });
+
+    // Update the scan with the user_id if provided
+    if (user_id && user_id !== "anonymous") {
+      await supabase
+        .from("scans")
+        .update({ user_id })
+        .eq("scan_id", result.scan_id);
+    }
+
+    return res.json(result);
+  } catch (err) {
+    console.error("[COMPAT] Analysis error:", err);
+    return res.status(500).json({ error: err.message || "Compatibility scan failed" });
+  }
+});
+
 export default router;
 
 // ── Legacy/v1 alias for backward compatibility ─────

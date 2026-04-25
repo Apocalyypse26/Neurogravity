@@ -1,71 +1,61 @@
-# NEUROX Backend Architecture
+# 🧠 NEUROX Backend Architecture v2.5 (Finalized)
 
-This document provides a comprehensive overview of the NEUROX backend system, a high-performance analysis pipeline built with FastAPI and powered by the TRIBE v2 engine.
+The NEUROX backend is a high-performance **Node.js/Express** engine designed for forensic-level analysis of crypto-token visual assets. It uses a 5-step asynchronous pipeline to determine a token's **Trust Score**.
 
 ## 🚀 Core Technology Stack
-- **Framework**: FastAPI (Python 3.11+)
-- **AI Engine**: OpenAI GPT-4o-mini (via `openai`)
-- **Image Processing**: PIL (Pillow) for deterministic feature extraction
-- **Database**: Supabase (PostgreSQL) for persistence and storage
-- **Authentication**: Supabase JWT (Bearer Token)
-- **Payments**: Stripe Integration
+- **Framework**: Node.js (v20+) with Express
+- **AI Engine**: OpenAI GPT-4o-mini (Vision)
+- **Image Processing**: Sharp (High-speed resizing and transformation)
+- **Queue System**: BullMQ (Powered by Upstash Redis) for asynchronous task handling
+- **Storage**: Supabase (PostgreSQL + pgvector) and Cloudflare R2 (Image CDN)
+- **Scraper**: Playwright (for extracting assets from URLs/X/Telegram)
+
+## 🏗️ The 5-Step Analysis Pipeline
+
+Each image scan passes through the following layers:
+
+### 1. Preprocessor (`modules/preprocessor.js`)
+- Normalizes images to 512x512 WebP.
+- Generates a **pHash (Perceptual Hash)** to detect exact or near-duplicate scans.
+- Performs "Lazy Cache" lookups to return instant results for previously scanned images.
+- Uploads the normalized asset to **Cloudflare R2**.
+
+### 2. GPT-4o Vision Scorer (`modules/gptScorer.js`)
+- Sends the image to OpenAI's GPT-4o-mini vision model.
+- Analyzes visual indicators: scam flags, celebrity faces, rocket imagery, and text claims.
+- Performs high-accuracy OCR to extract contract addresses and token names.
+
+### 3. Brand Originality (`modules/brandOriginal.js`)
+- Generates a **CLIP Embedding** for the image.
+- Performs a **Vector Similarity Search** against a database of known established projects.
+- Detects if a new token is impersonating a high-profile brand (e.g., Uniswap, Solana).
+
+### 4. Visual Consistency (`modules/visualConsist.js`)
+- Compares multiple assets from a single URL (Logo vs. Banner vs. Social Post).
+- Checks for professional design alignment vs. "slapdash" low-effort creation.
+
+### 5. Aggregator (`modules/aggregator.js`)
+- Fuses all signals into a weighted **Trust Score (0-100)**.
+- Determines the **Risk Level** (LOW, MODERATE, HIGH, EXTREME).
+- Generates the final **Verdict** and **Actionable Recommendation**.
+
+## 📡 API Endpoints
+
+### `POST /api/scan/image`
+Direct image upload (Multipart). The core v2.5 entry point.
+
+### `POST /api/scan/url`
+Accepts a URL (X, Telegram, or Website), scrapes all visual assets, and runs a composite consistency scan.
+
+### `POST /api/analyze` (Compatibility)
+Legacy wrapper for frontend integration. Accepts `upload_id` and `file_url`, fetches the asset, and triggers the v2.5 pipeline.
+
+### `GET /api/scan/:scanId`
+Retrieves full result breakdown and metadata for a specific scan.
 
 ---
 
-## 🛠️ System Components
-
-### 1. API Layer (`main.py`)
-The entry point of the application. It handles:
-- **Routing**: RESTful endpoints for analysis, job tracking, and admin tasks.
-- **Middleware**: CORS handling, security headers (CSP, XSS protection), and rate limiting (via `slowapi`).
-- **Auth Guards**: Standardized authentication using Supabase tokens.
-
-### 2. Job Manager (`services/job_manager.py`)
-Orchestrates the asynchronous analysis pipeline. 
-- **State Machine**: Tracks jobs through `PENDING` → `PREPROCESSING` → `OCR_EXTRACTING` → `TRIBE_ANALYZING` → `MAPPING_SCORES` → `COMPLETED`.
-- **Persistence**: Synchronizes job states with the Supabase `jobs` table for real-time tracking across sessions.
-- **Cleanup**: Automated background tasks to remove stale job data.
-
-### 3. TRIBE v2 Engine (`services/tribe_service.py`)
-The primary analysis engine, now specialized for **Crypto Token Trust Assessment**.
-- **Hybrid Pipeline**:
-    - **Deterministic**: PIL-based analysis of visual features (contrast, complexity, text density, color variety).
-    - **AI Refinement**: Uses **OpenAI GPT-4o-mini** to analyze extracted OCR text and visual metadata for trust signals (contract legitimacy, liquidity depth, rugpull risks).
-- **Output**: Generates raw signals for contract safety, liquidity health, and market credibility.
-
-### 4. Score Mapper (`services/score_mapper.py`)
-Translates raw TRIBE signals into user-friendly NEUROX metrics.
-- **Trust Score**: A weighted calculation (0-100) combining contract safety, liquidity, and AI sentiment.
-- **Metric Mapping**:
-    - `raw_hook_score` → **Contract Safety**
-    - `raw_attention_peak` → **Liquidity Health**
-    - `raw_attention_mean` → **Market Credibility**
-    - `raw_ending_strength` → **Team Transparency**
-- **Action Logic**: Determines the recommended action (BUY, HOLD, AVOID, DANGER).
-
-### 5. Specialized Services
-- **Preprocess Service**: Normalizes images, detects "deep-fry" manipulation, and extracts low-level visual features.
-- **OCR Service**: Detects and extracts text from screenshots for AI analysis.
-- **Media Cache**: Downloads and localizes remote Supabase files to speed up processing.
-- **Stripe Service**: Manages credit balance and subscription state.
-
----
-
-## 🔄 The Analysis Flow
-1. **Request**: Frontend sends an `upload_id` to `/api/analyze`.
-2. **Job Creation**: `JobManager` creates a unique job ID and starts a background task.
-3. **Preprocessing**: The image is downloaded and analyzed for visual features.
-4. **OCR**: Text is extracted from the image.
-5. **TRIBE Analysis**: 
-    - Deterministic scores are calculated.
-    - OCR data is sent to OpenAI AI for a "Deep Scan" of trust signals.
-6. **Mapping**: Raw data is converted into the final `TRUST SCORE` format.
-7. **Completion**: Job status is updated to `COMPLETED`, and results are pushed to the database.
-
----
-
-## 🔒 Security & Performance
-- **Safe URLs**: Validation to prevent SSRF attacks when downloading media.
-- **Rate Limiting**: Per-user and per-IP limits to prevent API abuse.
-- **Timeouts**: Strict timeouts for every stage of the pipeline (Download, AI, OCR) to prevent hanging processes.
-- **Retries**: Intelligent exponential backoff for database and API calls.
+## 🛠️ Infrastructure Requirements
+- **OPENAI_API_KEY**: Required for vision analysis.
+- **UPSTASH_REDIS_URL**: Required for the BullMQ background worker.
+- **SUPABASE_URL**: Required for persistence and vector search.
