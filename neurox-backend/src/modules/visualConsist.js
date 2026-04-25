@@ -62,17 +62,15 @@ export async function checkVisualConsistency(imageBuffers) {
   const flags = [];
 
   if (avgOverlap >= 67) {
-    // High overlap: top 3 colors share ≥67% matches
     visual_consistency = Math.round(85 + (avgOverlap - 67) * (15 / 33));
-    visual_consistency = Math.min(100, visual_consistency);
   } else if (avgOverlap >= 30) {
-    // Medium overlap
     visual_consistency = Math.round(50 + (avgOverlap - 30) * (34 / 37));
   } else {
-    // Low overlap: < 30% match
     visual_consistency = Math.round(avgOverlap * (49 / 30));
     flags.push("Inconsistent visual branding detected across assets");
   }
+
+  visual_consistency = Math.max(0, Math.min(100, visual_consistency));
 
   return {
     visual_consistency,

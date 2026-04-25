@@ -21,19 +21,26 @@ import { WEIGHTS } from "../config/weights.js";
  * @returns {{ trustScore: number, riskLevel: string, verdict: string, recommendation: string }}
  */
 export function aggregate(scores) {
-  // Weighted contributions
-  const scamContrib = (100 - scores.scam_risk) * WEIGHTS.scam_risk;
-  const credContrib = scores.claim_credibility * WEIGHTS.claim_credibility;
-  const hypeContrib = (100 - scores.hype_manipulation) * WEIGHTS.hype_manipulation;
-  const launchContrib = scores.launch_quality * WEIGHTS.launch_quality;
-  const brandContrib = scores.brand_originality * WEIGHTS.brand_originality;
-  const consistContrib = scores.visual_consistency * WEIGHTS.visual_consistency;
+  const safe = {
+    scam_risk: scores.scam_risk ?? 50,
+    claim_credibility: scores.claim_credibility ?? 50,
+    hype_manipulation: scores.hype_manipulation ?? 50,
+    launch_quality: scores.launch_quality ?? 50,
+    brand_originality: scores.brand_originality ?? 70,
+    visual_consistency: scores.visual_consistency ?? 75,
+  };
+
+  const scamContrib = (100 - safe.scam_risk) * WEIGHTS.scam_risk;
+  const credContrib = safe.claim_credibility * WEIGHTS.claim_credibility;
+  const hypeContrib = (100 - safe.hype_manipulation) * WEIGHTS.hype_manipulation;
+  const launchContrib = safe.launch_quality * WEIGHTS.launch_quality;
+  const brandContrib = safe.brand_originality * WEIGHTS.brand_originality;
+  const consistContrib = safe.visual_consistency * WEIGHTS.visual_consistency;
 
   const trustScore = Math.round(
     scamContrib + credContrib + hypeContrib + launchContrib + brandContrib + consistContrib
   );
 
-  // Clamp to 0–100
   const clampedScore = Math.max(0, Math.min(100, trustScore));
 
   // Risk classification
@@ -57,7 +64,7 @@ export function aggregate(scores) {
   }
 
   // Generate recommendation from scores
-  const recommendation = generateRecommendation(scores, clampedScore);
+  const recommendation = generateRecommendation(safe, clampedScore);
 
   return {
     trustScore: clampedScore,

@@ -1,14 +1,11 @@
 // ═══════════════════════════════════════════════════════
-// OpenAI Client — GPT-4o mini vision access
+// Request ID Middleware — Generates and tracks request IDs
 // ═══════════════════════════════════════════════════════
-import OpenAI from "openai";
+import { randomUUID } from "crypto";
 
-const apiKey = process.env.OPENAI_API_KEY;
-
-if (!apiKey) {
-  console.error("[OPENAI] Missing OPENAI_API_KEY — GPT scoring will fail at runtime");
+export function requestIdMiddleware(req, res, next) {
+  const id = req.headers["x-request-id"] || randomUUID();
+  req.requestId = id;
+  res.set("X-Request-ID", id);
+  next();
 }
-
-export const openai = apiKey
-  ? new OpenAI({ apiKey })
-  : null;

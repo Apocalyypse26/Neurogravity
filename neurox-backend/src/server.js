@@ -6,18 +6,39 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import scanRoutes from "./routes/scan.js";
 import { startWorker, stopWorker } from "./queue/scanQueue.js";
 import { closeBrowser } from "./services/scraper.js";
+import { standardLimiter, strictLimiter } from "./middleware/rateLimit.js";
+import { createLoggerMiddleware } from "./middleware/logger.js";
+import { metricsMiddleware } from "./middleware/metrics.js";
+import { requestIdMiddleware } from "./middleware/requestId.js";
+import { startCronJobs, stopCronJobs } from "./jobs/cron.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 
+// ── Request Logging ──────────────────────────────────
+app.use(requestIdMiddleware);
+app.use(createLoggerMiddleware());
+app.use(metricsMiddleware);
+
 // ── Security & Parsing Middleware ─────────────────────
+app.use(compression());
 app.use(helmet());
+
+// CORS: whitelist allowed origins from environment
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: true, // reflect request origin (configure for production)
+    origin: allowedOrigins.length > 0
+      ? allowedOrigins
+      : false, // false = same-origin only in production if no whitelist
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -41,11 +62,41 @@ app.use((req, _res, next) => {
 });
 
 // ── Health Check ─────────────────────────────────────
-app.get("/api/health", (_req, res) => {
-  res.json({
-    status: "operational",
-    version: "2.5",
+import { supabase } from "./services/supabase.js";
+
+app.get("/api/health", async (_req, res) => {
+  const checks = {
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {},
+  };
+
+  // Check Supabase
+  try {
+    const { error } = await supabase.from("scans").select("id").limit(1);
+    checks.services.supabase = error ? { status: "unhealthy", error: error.message } : { status: "healthy" };
+  } catch (err) {
+    checks.services.supabase = { status: "unhealthy", error: err.message };
+  }
+
+  // Check Redis/Redis (Upstash)
+  checks.services.redis = {
+    status: process.env.UPSTASH_REDIS_REST_URL ? "configured" : "not_configured",
+  };
+
+  // Check OpenAI
+  checks.services.openai = {
+    status: process.env.OPENAI_API_KEY ? "configured" : "not_configured",
+  };
+
+  const allHealthy = Object.values(checks.services).every(
+    (s) => s.status === "healthy" || s.status === "configured"
+  );
+
+  res.status(allHealthy ? 200 : 503).json({
+    status: allHealthy ? "operational" : "degraded",
+    version: "2.5",
+    ...checks,
   });
 });
 
@@ -85,6 +136,7 @@ const server = app.listen(PORT, () => {
 
   // Start BullMQ worker for async scan processing
   startWorker();
+  startCronJobs();
 });
 
 // ── Graceful Shutdown ────────────────────────────────
@@ -93,6 +145,13 @@ async function shutdown(signal) {
 
   server.close(async () => {
     console.log("[SHUTDOWN] HTTP server closed");
+
+    try {
+      stopCronJobs();
+      console.log("[SHUTDOWN] Cron jobs stopped");
+    } catch (err) {
+      console.warn("[SHUTDOWN] Cron stop error:", err.message);
+    }
 
     try {
       stopWorker();

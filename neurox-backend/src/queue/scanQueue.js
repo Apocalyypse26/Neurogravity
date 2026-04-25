@@ -75,8 +75,9 @@ export const scanQueue = connection
  */
 export async function addScanJob(jobData) {
   if (!scanQueue) {
-    // No queue available — process synchronously
-    return processScanJob({ data: serializeJobData(jobData) });
+    console.warn("[QUEUE] No Redis connection — processing synchronously (no retries, no job tracking)");
+    const result = await processScanJob({ data: serializeJobData(jobData) });
+    return result?.scan_id || "sync-scan";
   }
 
   const serialized = serializeJobData(jobData);
@@ -107,6 +108,11 @@ function serializeJobData(jobData) {
  */
 export async function processScanJob(job) {
   const data = job.data;
+
+  if (!data || typeof data.imageBase64 !== "string" || data.imageBase64.length === 0) {
+    throw Object.assign(new Error("Invalid job data: imageBase64 is missing or empty"), { statusCode: 400 });
+  }
+
   const imageBuffer = Buffer.from(data.imageBase64, "base64");
   const extraBuffers = (data.extraBuffersBase64 || []).map((b) => Buffer.from(b, "base64"));
 

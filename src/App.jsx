@@ -7,13 +7,22 @@ import ProjectView from './pages/ProjectView'
 import ResultsView from './pages/ResultsView'
 import Documentation from './pages/Documentation'
 import ErrorBoundary from './components/ErrorBoundary'
+import React, { useEffect, useState, lazy, Suspense } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import Home from './pages/Home'
+import AuthPage from './pages/AuthPage'
+import Dashboard from './pages/Dashboard'
+import ProjectView from './pages/ProjectView'
+import ResultsView from './pages/ResultsView'
+import Documentation from './pages/Documentation'
+import ErrorBoundary from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
 import { supabase } from './lib/supabase'
 import '../style.css'
 
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 
-const RequireAuth = ({ children }) => {
+const RequireAuth = ({ children, session, loading }) => {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050010' }}>
@@ -25,7 +34,7 @@ const RequireAuth = ({ children }) => {
   return children
 }
 
-const RequireAdmin = ({ children }) => {
+const RequireAdmin = ({ children, session, loading }) => {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050010' }}>
@@ -65,22 +74,22 @@ export default function App() {
           <Route path="/auth" element={<AuthPage session={session} />} />
           <Route path="/docs" element={<Documentation />} />
           <Route path="/dashboard" element={
-            <RequireAuth>
+            <RequireAuth session={session} loading={loading}>
               <Dashboard session={session} />
             </RequireAuth>
           } />
           <Route path="/dashboard/project/:projectId" element={
-            <RequireAuth>
+            <RequireAuth session={session} loading={loading}>
               <ProjectView session={session} />
             </RequireAuth>
           } />
           <Route path="/dashboard/analysis/:uploadId" element={
-            <RequireAuth>
+            <RequireAuth session={session} loading={loading}>
               <ResultsView session={session} />
             </RequireAuth>
           } />
           <Route path="/admin" element={
-            <RequireAdmin>
+            <RequireAdmin session={session} loading={loading}>
               <Suspense fallback={null}>
                 <AdminDashboard session={session} />
               </Suspense>

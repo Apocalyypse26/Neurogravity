@@ -3,6 +3,62 @@
 // ═══════════════════════════════════════════════════════
 import { chromium } from "playwright";
 
+// SSRF Protection: Block dangerous URLs
+const BLOCKED_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "0.0.0.0",
+  "metadata.google.internal",
+  "metadata.google",
+]);
+
+const BLOCKED_PROTOCOLS = new Set(["javascript:", "data:", "file:", "vbscript:"]);
+
+function isURLSafe(url) {
+  try {
+    const parsed = new URL(url);
+
+    // Block dangerous protocols
+    if (BLOCKED_PROTOCOLS.has(parsed.protocol)) {
+      return false;
+    }
+
+    // Block internal/private IPs
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Block localhost variants
+    if (BLOCKED_HOSTS.has(hostname)) {
+      return false;
+    }
+
+    // Block private IP ranges (RFC 1918)
+    const ipMatch = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipMatch) {
+      const first = parseInt(ipMatch[1], 10);
+      const second = parseInt(ipMatch[2], 10);
+
+      // 10.0.0.0/8
+      if (first === 10) return false;
+      // 172.16.0.0/12
+      if (first === 172 && second >= 16 && second <= 31) return false;
+      // 192.168.0.0/16
+      if (first === 192 && second === 168) return false;
+      // 127.0.0.0/8 (already blocked, but double-check)
+      if (first === 127) return false;
+    }
+
+    // Block AWS metadata endpoints
+    if (hostname.includes(".internal.") || hostname === "169.254.169.254") {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 let browser = null;
 
 /**
@@ -26,6 +82,14 @@ async function getBrowser() {
  * @returns {Promise<{ images: Buffer[], metadata: object }>}
  */
 export async function scrapeUrl(url) {
+  if (!url || typeof url !== "string") {
+    return { images: [], metadata: { error: "Invalid URL" } };
+  }
+
+  if (!isURLSafe(url)) {
+    return { images: [], metadata: { error: "URL blocked: internal or unsafe URLs not allowed" } };
+  }
+
   const instance = await getBrowser();
   const context = await instance.newContext({
     userAgent:

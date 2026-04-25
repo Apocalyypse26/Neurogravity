@@ -8,8 +8,16 @@ import sharp from "sharp";
 import { processScanJob } from "../queue/scanQueue.js";
 import { supabase } from "../services/supabase.js";
 import { scrapeUrl } from "../services/scraper.js";
+import { strictLimiter, scanLimiter, standardLimiter } from "../middleware/rateLimit.js";
+import { authenticate, optionalAuth } from "../middleware/auth.js";
+import { createCache } from "../middleware/cache.js";
+import { validateSync } from "../middleware/validate.js";
+import { scanUrlSchema, scanHistoryQuerySchema } from "../middleware/validate.js";
 
 const router = Router();
+
+// API Version constant
+const API_VERSION = "v1";
 
 // ── Multer config — 10MB limit, memory storage ───────
 const upload = multer({
@@ -34,7 +42,7 @@ const upload = multer({
 // POST /api/scan/image
 // Accepts multipart/form-data with field "image"
 // ═══════════════════════════════════════════════════════
-router.post("/image", upload.single("image"), async (req, res) => {
+router.post("/image", strictLimiter, authenticate, upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -72,7 +80,7 @@ router.post("/image", upload.single("image"), async (req, res) => {
 // Accepts JSON body { "url": "https://..." }
 // Scrapes logo, banner, and social post images, then scans
 // ═══════════════════════════════════════════════════════
-router.post("/url", async (req, res) => {
+router.post("/url", scanLimiter, authenticate, validateSync(scanUrlSchema, "body"), async (req, res) => {
   try {
     const { url } = req.body;
 
@@ -151,7 +159,7 @@ router.post("/url", async (req, res) => {
 // GET /api/scan/:scanId
 // Returns a previously stored scan result by scan_id
 // ═══════════════════════════════════════════════════════
-router.get("/:scanId", async (req, res) => {
+router.get("/:scanId", createCache({ ttl: 600 }), standardLimiter, optionalAuth, async (req, res) => {
   try {
     const { scanId } = req.params;
 
@@ -196,4 +204,54 @@ router.get("/:scanId", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════
+// GET /api/scan/history
+// Returns scan history for authenticated user with pagination
+// ═══════════════════════════════════════════════════════
+router.get("/history", createCache({ ttl: 60 }), validateSync(scanHistoryQuerySchema, "query"), standardLimiter, optionalAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Authentication required for history" });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const offset = (page - 1) * limit;
+
+    const { data, error, count } = await supabase
+      .from("scans")
+      .select("scan_id, trust_score, risk_level, verdict, created_at, input_type", { count: "exact" })
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      return res.status(500).json({ error: "Failed to retrieve scan history" });
+    }
+
+    const totalPages = Math.ceil(count / limit);
+
+    return res.json({
+      api_version: API_VERSION,
+      data,
+      pagination: {
+        page,
+        limit,
+        total: count,
+        total_pages: totalPages,
+        has_more: page < totalPages,
+      },
+    });
+  } catch (err) {
+    console.error("[SCAN] History error:", err);
+    return res.status(500).json({ error: "Failed to retrieve scan history" });
+  }
+});
+
 export default router;
+
+// ── Legacy/v1 alias for backward compatibility ─────
+// This allows clients to use /api/scan without version prefix
+export { API_VERSION };

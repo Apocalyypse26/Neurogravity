@@ -67,6 +67,9 @@ export async function scoreWithGPT(imageBuffer) {
  * Uses response_format: json_object to guarantee valid JSON (saves output tokens).
  */
 async function callGPT(imageDataUrl, userPrompt) {
+  if (!openai) {
+    throw new Error("OPENAI_API_KEY not configured");
+  }
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
