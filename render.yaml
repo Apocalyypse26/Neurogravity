@@ -19,7 +19,7 @@ services:
       - key: PORT
         value: 3000
       - key: ALLOWED_ORIGINS
-        value: https://www.neuroxscan.fun,https://neurogravity.vercel.app,https://neuroxscan.fun
+        value: https://www.neuroxscan.fun,https://neurogravity.vercel.app,https://neuroxscan.fun,https://app.neurogravity.ai
       - key: OPENAI_API_KEY
         sync: false
       - key: SUPABASE_URL

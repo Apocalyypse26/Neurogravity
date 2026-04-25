@@ -230,7 +230,7 @@ export default function ResultsView({ session }) {
           }
           
           const controller = new AbortController();
-          const timeoutMs = attempt === 1 ? 30000 : 60000; // 30s first try, 60s retries
+          const timeoutMs = 120000; // Increase to 120s to allow for deep AI analysis + cold starts
           const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
           
           const analyzeRes = await fetch(`${apiUrl}/api/analyze`, {
@@ -282,7 +282,7 @@ export default function ResultsView({ session }) {
       
       // All retries exhausted — show error, NEVER generate mock data
       console.error('[ANALYSIS] All retries failed:', lastError?.message);
-      setServerError('Analysis server is starting up. Please wait 30 seconds and try again.');
+      setServerError(lastError?.message || 'The analysis server is taking longer than expected. Please check your connection and try again.');
       setAnalysisStatus('failed');
       
     } catch (e) {
