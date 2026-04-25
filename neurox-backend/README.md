@@ -1,140 +1,156 @@
-# NEUROX Backend — Crypto Token Visual Trust Scoring Engine
+# NEUROX Backend
 
-> Scans crypto token visuals (logos, banners, memes, social posts) and returns a trust score breakdown to help traders identify scam tokens and evaluate launch quality before investing.
+Crypto Token Visual Trust Scoring Engine - Backend API
+
+## Overview
+
+NEUROX is a backend service that analyzes crypto token images for trust scoring. It processes images (logos, banners, social posts) through multiple analysis modules to generate a trust score and risk assessment.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                      POST /api/scan/image                    │
-│                      POST /api/scan/url                      │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────┐
-│   Step 1: Preprocessor   │  sharp resize → pHash → Redis cache check → R2 upload
-└──────────────┬───────────┘
-               │ (cache miss)
-               ▼
-┌──────────────────────────┐
-│  Step 2: GPT-4o mini     │  Single vision call → scam/hype/quality/claims scoring
-└──────────────┬───────────┘
-               │
-               ▼
-┌──────────────────────────┐
-│ Step 3: Brand Originality│  CLIP embedding → pgvector similarity → known project match
-└──────────────┬───────────┘
-               │
-               ▼
-┌──────────────────────────┐
-│ Step 4: Visual Consist.  │  Median cut palette → cross-image color comparison (local)
-└──────────────┬───────────┘
-               │
-               ▼
-┌──────────────────────────┐
-│   Step 5: Aggregator     │  Weighted scoring → risk classification → verdict
-└──────────────┬───────────┘
-               │
-               ▼
-┌──────────────────────────┐
-│   Result: JSON output    │  Persisted to Supabase + cached in Redis
-└──────────────────────────┘
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Frontend   │────▶│   Express    │────▶│  Pipeline   │
+│  (upload)   │     │   Server    │     │  (modules) │
+└─────────────┘     └──────────────┘     └─────────────┘
+                                               │
+                    ┌──────────────┐           ▼
+                    │  Supabase    │◀─── aggregate()
+                    │  (persist) │
+                    └──────────────┘
 ```
 
-## Tech Stack
+## Image Scanning Pipeline
 
-| Component     | Technology                        |
-|---------------|-----------------------------------|
-| Runtime       | Node.js + Express                 |
-| Language      | JavaScript (ESM modules)          |
-| LLM           | OpenAI GPT-4o mini (vision)       |
-| Image proc    | sharp                             |
-| Hashing       | Custom pHash (DCT-based)          |
-| Embeddings    | HuggingFace CLIP ViT-B/32         |
-| Vector DB     | Supabase pgvector                 |
-| Database      | Supabase PostgreSQL               |
-| Cache         | Upstash Redis (REST API)          |
-| File Storage  | Cloudflare R2 (S3 SDK)            |
-| Queue         | BullMQ (Upstash Redis)            |
-| Scraper       | Playwright                        |
-| Hosting       | Railway.app                       |
+The scan processes through 5 stages:
 
-## Quick Start
+### 1. Preprocess (`src/modules/preprocessor.js`)
+- Validate file size (max 10MB) and MIME type (PNG, JPEG, WebP, GIF)
+- Resize to 512x512 with black padding
+- Generate perceptual hash (pHash) for duplicate detection
+- Check Redis cache for existing scans
+- Upload to Cloudflare R2 for storage
 
-```bash
-# 1. Install dependencies
-npm install
+### 2. GPT-4o Mini Scoring (`src/modules/gptScorer.js`)
+- Analyze image with OpenAI GPT-4o mini (vision)
+- Extract scam indicators, claim credibility, hype manipulation, launch quality
+- OCR text extraction
 
-# 2. Install Playwright browsers
-npx playwright install chromium
+### 3. Brand Originality (`src/modules/brandOriginal.js`)
+- Compare against known brand logos via HuggingFace CLIP
+- Detect potential brand imitation
 
-# 3. Copy environment template and fill in values
-cp .env.example .env
+### 4. Visual Consistency (`src/modules/visualConsist.js`)
+- Compare multiple images from same token
+- Detect inconsistencies indicating fake/forged images
 
-# 4. Run Supabase migration
-# Apply supabase/migrations/001_init.sql to your Supabase project
-
-# 5. Start the server
-npm run dev
-```
+### 5. Aggregate (`src/modules/aggregator.js`)
+- Combine all scores into final trust score (0-100)
+- Generate risk level (low/medium/high/critical)
+- Determine verdict (verified/trustable/caution/high_risk)
 
 ## API Endpoints
 
-### `POST /api/scan/image`
-Upload an image for trust analysis.
+| Method | Endpoint | Description | Auth |
+|--------|----------|------------|------|
+| POST | `/api/scan/image` | Upload image for scanning | ✅ Required |
+| POST | `/api/scan/url` | Scan URL for images | ✅ Required |
+| GET | `/api/scan/:scanId` | Get scan result | Optional |
+| GET | `/api/scan/history` | Get user's scan history | ✅ Required |
+| GET | `/api/health` | Health check | - |
+| GET | `/metrics` | Prometheus metrics | - |
 
-```bash
-curl -X POST http://localhost:3000/api/scan/image \
-  -F "image=@token_logo.png"
+## Environment Variables
+
+```env
+# Required
+OPENAI_API_KEY=sk-...           # OpenAI API key
+SUPABASE_URL=https://...          # Supabase project URL
+SUPABASE_SERVICE_KEY=eyJ...     # Supabase service role key
+
+# Optional
+UPSTASH_REDIS_REST_URL=         # Upstash Redis URL (for queue/caching)
+UPSTASH_REDIS_REST_TOKEN=      # Upstash Redis token
+CLOUDFLARE_R2_ACCOUNT_ID=      # R2 account ID
+CLOUDFLARE_R2_ACCESS_KEY=      # R2 access key
+CLOUDFLARE_R2_SECRET_KEY=     # R2 secret key
+CLOUDFLARE_R2_BUCKET_NAME=    # R2 bucket name
+HUGGINGFACE_API_KEY=           # HuggingFace token (for CLIP)
+
+# Configuration
+PORT=3000
+ALLOWED_ORIGINS=https://...     # Comma-separated CORS origins
+HTTP2_ENABLED=false           # Enable HTTP/2
+NODE_ENV=development
+LOG_LEVEL=info
 ```
 
-### `POST /api/scan/url`
-Scrape and analyze visual assets from a URL.
+## Running Locally
 
 ```bash
-curl -X POST http://localhost:3000/api/scan/url \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example-token.com"}'
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your API keys
+
+# Start development server
+npm run dev
+
+# Or start production
+npm start
 ```
 
-### `GET /api/scan/:scanId`
-Retrieve a previously stored scan result.
+## Running with Docker
 
 ```bash
-curl http://localhost:3000/api/scan/NRX-20260420-0042
+# Build and run
+docker build -t neurox-backend .
+docker run -p 3000:3000 --env-file .env neurox-backend
+
+# Or with docker-compose
+docker-compose up --build
 ```
 
-### `GET /api/health`
-Health check endpoint.
+## Deployment
 
+### Vercel
+Import the `neurox-backend` directory as a Node.js project.
+
+### Render
+Use the included `render.yaml` blueprint or configure manually:
+- Build Command: `npm install`
+- Start Command: `npm start`
+
+### Custom Server
 ```bash
-curl http://localhost:3000/api/health
+# Install Node.js 20+
+# Set environment variables
+# Run npm start
 ```
 
-## Output Format
+## Response Format
 
+### Scan Result
 ```json
 {
-  "scan_id": "NRX-20260420-0042",
-  "trust_score": 34,
-  "risk_level": "HIGH RISK",
-  "verdict": "Proceed with extreme caution",
+  "scan_id": "NRX-20260425-ABCD",
+  "trust_score": 72,
+  "risk_level": "medium",
+  "verdict": "trustable",
   "scores": {
-    "scam_risk": 78,
-    "claim_credibility": 29,
-    "hype_manipulation": 82,
-    "launch_quality": 38,
-    "brand_originality": 41,
-    "visual_consistency": 55
+    "scam_risk": 28,
+    "claim_credibility": 75,
+    "hype_manipulation": 35,
+    "launch_quality": 68,
+    "brand_originality": 85,
+    "visual_consistency": 92
   },
-  "flags": [
-    "Logo is 91% similar to SafeMoon v1",
-    "Detected: guaranteed returns text in banner",
-    "Celebrity face detected — no verified association",
-    "Countdown timer overlay detected"
-  ],
-  "recommendation": "Multiple high-risk visual signals detected.",
-  "ocr_text": "BUY NOW 100X GUARANTEED LIMITED TIME",
+  "flags": ["high_hype_language"],
+  "recommendation": "Proceed with caution. Verify claims independently.",
+  "ocr_text": "...",
   "platform_data": {
     "input_type": "image",
     "analyzed_assets": 1,
@@ -142,38 +158,72 @@ curl http://localhost:3000/api/health
     "cache_hit": false,
     "quality_flags": []
   },
-  "timestamp": "2026-04-20T00:00:00Z"
+  "timestamp": "2026-04-25T12:00:00.000Z"
 }
 ```
 
-## Trust Score Weights
+## Security Features
 
-| Module              | Weight | Direction |
-|---------------------|--------|-----------|
-| Scam Risk           | 25%    | Inverted  |
-| Brand Originality   | 20%    | Direct    |
-| Claim Credibility   | 15%    | Direct    |
-| Hype Manipulation   | 15%    | Inverted  |
-| Visual Consistency  | 15%    | Direct    |
-| Launch Quality      | 10%    | Direct    |
+- **CORS**: Whitelist allowed origins
+- **Rate Limiting**: Per-endpoint limits (10-30 req/min)
+- **SSRF Protection**: Block internal/private URLs
+- **Authentication**: Supabase JWT validation
+- **Input Validation**: Zod schema validation
 
-## Risk Classification
+## Performance Features
 
-| Score | Risk Level     | Verdict                          |
-|-------|----------------|----------------------------------|
-| 0–25  | CRITICAL RISK  | Do not engage                    |
-| 26–45 | HIGH RISK      | Proceed with extreme caution     |
-| 46–65 | MODERATE RISK  | Unverified — DYOR                |
-| 66–80 | LOOKS LEGIT    | Passes visual trust check        |
-| 81–100| HIGH TRUST     | Strong brand signals             |
+- **Multi-layer Caching**: L1 (in-memory) → L2 (Redis) → L3 (Supabase)
+- **Response Compression**: Gzip
+- **HTTP/2**: Optional (requires SSL certificates)
 
-## Environment Variables
+## Testing
 
-See `.env.example` for all required configuration.
+```bash
+# Run unit tests
+npm test
 
-## Deployment (Railway)
+# Run specific test file
+node --test tests/validate.test.js
+```
 
-1. Connect your GitHub repo to Railway
-2. Set all environment variables from `.env.example`
-3. Railway auto-detects Node.js and runs `npm start`
-4. Health check: `GET /api/health`
+## Project Structure
+
+```
+neurox-backend/
+├── src/
+│   ├── server.js           # Express app entry
+│   ├── routes/
+│   │   └── scan.js       # API routes
+│   ├── modules/
+│   │   ├── preprocessor.js
+│   │   ├── gptScorer.js
+│   │   ├── brandOriginal.js
+│   │   ├── visualConsist.js
+│   │   └── aggregator.js
+│   ├── middleware/
+│   │   ├── auth.js
+│   │   ├── rateLimit.js
+│   │   ├── cache.js
+│   │   └── validate.js
+│   ├── services/
+│   │   ├── supabase.js
+│   │   ├── redis.js
+│   │   ├── openai.js
+│   │   ├── scraper.js
+│   │   └── r2.js
+│   ├── cache/
+│   │   └── l1.js        # In-memory LRU cache
+│   └── utils/
+│       ├── phash.js
+│       └── formatter.js
+├── tests/
+│   ├── validate.test.js
+│   └── ssrf.test.js
+├── Dockerfile
+├── docker-compose.yml
+└── vercel.json
+```
+
+## License
+
+MIT
