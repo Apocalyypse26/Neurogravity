@@ -7,6 +7,9 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
+import http from "http";
+import https from "https";
+import fs from "fs";
 import scanRoutes from "./routes/scan.js";
 import { startWorker, stopWorker } from "./queue/scanQueue.js";
 import { closeBrowser } from "./services/scraper.js";
@@ -129,19 +132,48 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-// ── Start Server ─────────────────────────────────────
-const server = app.listen(PORT, () => {
-  console.log("═══════════════════════════════════════════");
-  console.log(`  NEUROX Backend v2.5`);
-  console.log(`  Trust Scoring Engine — Operational`);
-  console.log(`  Port: ${PORT}`);
-  console.log(`  Env:  ${process.env.NODE_ENV || "development"}`);
-  console.log("═══════════════════════════════════════════");
+// ── HTTP/2 Server Setup ────────────────────────────────
+const http2Enabled = process.env.HTTP2_ENABLED === "true";
+const useHTTP2 = http2Enabled && fs.existsSync("./ssl/key.pem") && fs.existsSync("./ssl/cert.pem");
 
-  // Start BullMQ worker for async scan processing
-  startWorker();
-  startCronJobs();
-});
+let server;
+
+if (useHTTP2) {
+  const serverOptions = {
+    key: fs.readFileSync("./ssl/key.pem"),
+    cert: fs.readFileSync("./ssl/cert.pem"),
+    allowHTTP1: true,
+    honorCipherOrder: true,
+  };
+
+  const http2Server = https.createServer(serverOptions, app);
+
+  http2Server.listen(PORT, () => {
+    console.log("═══════════════════════════════════════════");
+    console.log(`  NEUROX Backend v2.5`);
+    console.log(`  HTTP/2 — Operational`);
+    console.log(`  Port: ${PORT}`);
+    console.log(`  Env:  ${process.env.NODE_ENV || "development"}`);
+    console.log("═══════════════════════════════════════════");
+
+    startWorker();
+    startCronJobs();
+  });
+
+  server = http2Server;
+} else {
+  server = app.listen(PORT, () => {
+    console.log("═══════════════════════════════════════════");
+    console.log(`  NEUROX Backend v2.5`);
+    console.log(`  Trust Scoring Engine — Operational`);
+    console.log(`  Port: ${PORT}`);
+    console.log(`  Env:  ${process.env.NODE_ENV || "development"}`);
+    console.log("═══════════════════════════════════════════");
+
+    startWorker();
+    startCronJobs();
+  });
+}
 
 // ── Graceful Shutdown ────────────────────────────────
 async function shutdown(signal) {

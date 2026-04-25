@@ -133,23 +133,11 @@ export default function ResultsView({ session }) {
 
       if (data) {
         setUpload(data)
-        const isStaleMockData = data.score_data && (
-          (data.score_data.rank && data.score_data.rank.includes('WARNING')) ||
-          (data.score_data.rank && data.score_data.rank.includes('fallback')) ||
-          !data.score_data.confidence ||
-          (data.score_data.confidence && data.score_data.confidence.text === 'EXPERIMENTAL')
-        )
-
-        if (data.score_data && !isStaleMockData) {
-          const normalized = normalizeScoreData(data.score_data)
-          setAnalysisData(normalized)
-          setLoading(false)
-        } else {
-          if (isStaleMockData) {
-            console.log('[ResultsView] Stale mock data detected, re-analyzing...')
-          }
-          await executeAnalysisHook(data)
-        }
+        // Always clear old cached results and run a fresh analysis
+        // so the user always gets live, up-to-date scan results
+        console.log('[ResultsView] Clearing old score_data and running fresh analysis...');
+        await supabase.from('uploads').update({ score_data: null }).eq('id', uploadId);
+        await executeAnalysisHook(data)
       } else {
         setLoading(false)
       }

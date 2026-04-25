@@ -13,6 +13,7 @@ import { authenticate, optionalAuth } from "../middleware/auth.js";
 import { createCache } from "../middleware/cache.js";
 import { validateSync } from "../middleware/validate.js";
 import { scanUrlSchema, scanHistoryQuerySchema } from "../middleware/validate.js";
+import { getCachedScan, setCachedScan } from "../cache/l1.js";
 
 const router = Router();
 
@@ -169,17 +170,14 @@ router.get("/:scanId", createCache({ ttl: 600 }), standardLimiter, optionalAuth,
       });
     }
 
-    const { data, error } = await supabase
-      .from("scans")
-      .select("*")
-      .eq("scan_id", scanId)
-      .single();
+    const { data, source } = await getCachedScan(scanId);
 
-    if (error || !data) {
+    if (!data) {
       return res.status(404).json({ error: "Scan not found" });
     }
 
-    // Reconstruct the full scan result format
+    const cacheHit = source !== "L3";
+
     return res.json({
       scan_id: data.scan_id,
       trust_score: data.trust_score,
@@ -193,7 +191,7 @@ router.get("/:scanId", createCache({ ttl: 600 }), standardLimiter, optionalAuth,
         input_type: data.input_type,
         analyzed_assets: 1,
         duplicate_detected: false,
-        cache_hit: false,
+        cache_hit: cacheHit,
         quality_flags: [],
       },
       timestamp: data.created_at,
